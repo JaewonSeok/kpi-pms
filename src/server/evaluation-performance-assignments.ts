@@ -67,15 +67,14 @@ type StageAssigneeProfile = {
   jobTitle: string | null
 }
 
+// 평가자는 이 프로필에서 정하지 않는다. employees 슬롯(teamLeaderId 등)은 재계산 시점의
+// 사본이라 배정 행·기본 배정과 어긋날 수 있다. 자기평가 단계 표시에만 쓴다.
 type RuntimeTargetProfile = {
   id: string
   empName: string
   role: SystemRole
   position: Position
   departmentName: string
-  teamLeaderId: string | null
-  sectionChiefId: string | null
-  divisionHeadId: string | null
 }
 
 type RuntimeStageAssignment = {
@@ -297,9 +296,6 @@ async function loadRuntimeTargetProfile(db: AssignmentDbClient, targetId: string
       empName: true,
       role: true,
       position: true,
-      teamLeaderId: true,
-      sectionChiefId: true,
-      divisionHeadId: true,
       department: {
         select: {
           deptName: true,
@@ -318,9 +314,6 @@ async function loadRuntimeTargetProfile(db: AssignmentDbClient, targetId: string
     role: target.role,
     position: target.position,
     departmentName: target.department.deptName,
-    teamLeaderId: target.teamLeaderId,
-    sectionChiefId: target.sectionChiefId,
-    divisionHeadId: target.divisionHeadId,
   } satisfies RuntimeTargetProfile
 }
 
@@ -402,96 +395,54 @@ async function loadRuntimeStageAssignments(params: {
     },
   })
 
-  const persistedMap = new Map(
-    persistedAssignments.map((assignment) => [assignment.evalStage, assignment])
-  )
-  const fallbackEvaluatorIds: Record<Exclude<EvalStage, 'SELF'>, string | null> = {
-    FIRST: target.teamLeaderId,
-    SECOND: target.sectionChiefId,
-    FINAL: target.divisionHeadId,
-    CEO_ADJUST: null,
-  }
-
-  const requiresCeoAssignment =
-    !persistedAssignments.some(
-      (assignment) =>
-        assignment.evalStage === 'CEO_ADJUST' &&
-        assignment.evaluator?.status === 'ACTIVE'
+  // 배정 행이 하나라도 있으면 행만 쓴다. 행 없는 단계는 건너뛴다(평가자 없음).
+  // 비활성 평가자의 행도 그 단계를 비운다 — 다른 출처로 메우지 않는다.
+  if (persistedAssignments.length > 0) {
+    const persistedMap = new Map(
+      persistedAssignments.map((assignment) => [assignment.evalStage, assignment])
     )
+    const assignments = PERFORMANCE_ASSIGNABLE_STAGES.map((stage) => {
+      const persisted = persistedMap.get(stage)
+      if (persisted?.evaluator?.status === 'ACTIVE') {
+        return {
+          stage,
+          evaluatorId: persisted.evaluatorId,
+          evaluator: {
+            id: persisted.evaluator.id,
+            empName: persisted.evaluator.empName,
+            role: persisted.evaluator.role,
+            position: persisted.evaluator.position,
+            departmentName: persisted.evaluator.department.deptName,
+            jobTitle: persisted.evaluator.jobTitle,
+          } satisfies StageAssigneeProfile,
+        } satisfies RuntimeStageAssignment
+      }
 
-  let ceoProfile: StageAssigneeProfile | null = null
-  if (requiresCeoAssignment) {
-    const ceo = await db.employee.findFirst({
-      where: {
-        status: 'ACTIVE',
-        role: 'ROLE_CEO',
-      },
-      orderBy: {
-        createdAt: 'asc',
-      },
-      select: {
-        id: true,
-        empName: true,
-        role: true,
-        position: true,
-        jobTitle: true,
-        department: {
-          select: {
-            deptName: true,
-          },
-        },
-      },
+      return { stage, evaluatorId: null, evaluator: null } satisfies RuntimeStageAssignment
     })
 
-    if (ceo) {
-      ceoProfile = {
-        id: ceo.id,
-        empName: ceo.empName,
-        role: ceo.role,
-        position: ceo.position,
-        departmentName: ceo.department.deptName,
-        jobTitle: ceo.jobTitle,
-      }
-    }
+    return { target, assignments }
   }
 
-  fallbackEvaluatorIds.CEO_ADJUST = ceoProfile?.id ?? null
-
-  const fallbackIds = PERFORMANCE_ASSIGNABLE_STAGES.map(
-    (stage) => fallbackEvaluatorIds[stage as AssignableEvalStage]
-  ).filter((value): value is string => Boolean(value))
-  const missingFallbackIds = fallbackIds.filter(
-    (employeeId) =>
-      !persistedAssignments.some((assignment) => assignment.evaluatorId === employeeId)
+  // 행이 하나도 없는 대상만 기본 배정을 계산한다. sync 가 행을 쓰는 것과 같은 계산이다.
+  const defaults = await buildDefaultAssignmentRecords(db)
+  const defaultEvaluatorIdByStage = new Map(
+    defaults
+      .filter((item) => item.targetId === targetId)
+      .map((item) => [item.evalStage, item.evaluatorId] as const)
   )
-  const fallbackProfiles = await loadStageAssigneeProfiles(db, missingFallbackIds)
+  const defaultEvaluatorIds = PERFORMANCE_ASSIGNABLE_STAGES.map(
+    (stage) => defaultEvaluatorIdByStage.get(stage) ?? null
+  ).filter((value): value is string => Boolean(value))
+  const defaultProfiles = await loadStageAssigneeProfiles(db, defaultEvaluatorIds)
 
   const assignments = PERFORMANCE_ASSIGNABLE_STAGES.map((stage) => {
-    const persisted = persistedMap.get(stage)
-    if (persisted?.evaluator?.status === 'ACTIVE') {
-      return {
-        stage,
-        evaluatorId: persisted.evaluatorId,
-        evaluator: {
-          id: persisted.evaluator.id,
-          empName: persisted.evaluator.empName,
-          role: persisted.evaluator.role,
-          position: persisted.evaluator.position,
-          departmentName: persisted.evaluator.department.deptName,
-          jobTitle: persisted.evaluator.jobTitle,
-        } satisfies StageAssigneeProfile,
-      } satisfies RuntimeStageAssignment
-    }
-
-    const fallbackId = fallbackEvaluatorIds[stage as AssignableEvalStage]
-    const fallbackProfile =
-      (fallbackId ? fallbackProfiles.get(fallbackId) ?? null : null) ??
-      (fallbackId && ceoProfile?.id === fallbackId ? ceoProfile : null)
-
+    const evaluatorId = defaultEvaluatorIdByStage.get(stage) ?? null
+    const evaluator = evaluatorId ? defaultProfiles.get(evaluatorId) ?? null : null
     return {
       stage,
-      evaluatorId: fallbackProfile?.id ?? null,
-      evaluator: fallbackProfile,
+      evaluatorId: evaluator?.id ?? null,
+      evaluator,
     } satisfies RuntimeStageAssignment
   })
 
@@ -752,15 +703,17 @@ export async function resolveEvaluationStageAssignee(params: {
   ensureAssignableStage(params.evalStage)
   const db = params.db ?? prisma
 
-  const persisted = await db.evaluationAssignment.findUnique({
+  // loadRuntimeStageAssignments 와 같은 규칙: 대상자의 배정 행이 하나라도 있으면 그 단계 행만 쓴다.
+  const persistedAssignments = await db.evaluationAssignment.findMany({
     where: {
-      evalCycleId_targetId_evalStage: {
-        evalCycleId: params.evalCycleId,
-        targetId: params.targetId,
-        evalStage: params.evalStage,
+      evalCycleId: params.evalCycleId,
+      targetId: params.targetId,
+      evalStage: {
+        in: PERFORMANCE_ASSIGNABLE_STAGES,
       },
     },
     select: {
+      evalStage: true,
       evaluatorId: true,
       evaluator: {
         select: {
@@ -770,8 +723,9 @@ export async function resolveEvaluationStageAssignee(params: {
     },
   })
 
-  if (persisted?.evaluator.status === 'ACTIVE') {
-    return persisted.evaluatorId
+  if (persistedAssignments.length > 0) {
+    const persisted = persistedAssignments.find((assignment) => assignment.evalStage === params.evalStage)
+    return persisted?.evaluator.status === 'ACTIVE' ? persisted.evaluatorId : null
   }
 
   const defaults = await buildDefaultAssignmentRecords(db)
