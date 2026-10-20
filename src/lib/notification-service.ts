@@ -1237,6 +1237,20 @@ export function groupMonthlyKpisByEmployee(
   return map
 }
 
+type LifecycleReminderWindow = { gte: Date; lte: Date }
+
+// 날짜 리마인더 창(지금부터 3일 뒤까지). 사이클 선택과 리마인더별 발화가 이 창 하나로 판정한다.
+function buildLifecycleReminderWindow(now: Date): LifecycleReminderWindow {
+  return { gte: now, lte: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000) }
+}
+
+function isWithinLifecycleReminderWindow(
+  value: Date | null | undefined,
+  window: LifecycleReminderWindow
+): value is Date {
+  return Boolean(value) && value!.getTime() >= window.gte.getTime() && value!.getTime() <= window.lte.getTime()
+}
+
 export async function enqueueLifecycleReminders(
   db: PrismaClient = prisma,
   reminderTypes?: NotificationReminderType[]
@@ -1248,7 +1262,7 @@ export async function enqueueLifecycleReminders(
   const shouldQueueCheckpoints = !requestedReminderTypes || requestedReminderTypes.has('checkpoint')
 
   const now = new Date()
-  const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
+  const reminderWindow = buildLifecycleReminderWindow(now)
   const oneDayLater = new Date(now.getTime() + 24 * 60 * 60 * 1000)
 
   const [activeEmployees, cycles, checkIns, pendingEvaluations, monthlyKpis] = await Promise.all([
@@ -1259,9 +1273,9 @@ export async function enqueueLifecycleReminders(
     db.evalCycle.findMany({
       where: {
         OR: [
-          { kpiSetupEnd: { gte: now, lte: threeDaysLater } },
-          { resultOpenStart: { gte: now, lte: threeDaysLater } },
-          { ceoAdjustStart: { gte: now, lte: threeDaysLater } },
+          { kpiSetupEnd: { gte: reminderWindow.gte, lte: reminderWindow.lte } },
+          { resultOpenStart: { gte: reminderWindow.gte, lte: reminderWindow.lte } },
+          { ceoAdjustStart: { gte: reminderWindow.gte, lte: reminderWindow.lte } },
         ],
       },
       select: {
@@ -1312,8 +1326,9 @@ export async function enqueueLifecycleReminders(
   let suppressed = 0
   let duplicates = 0
 
+  // 사이클은 세 날짜 중 하나만 창 안이어도 선택된다. 리마인더는 자기 날짜가 창 안일 때만 만든다.
   for (const cycle of cycles) {
-    if (shouldQueueGoals && cycle.kpiSetupEnd) {
+    if (shouldQueueGoals && isWithinLifecycleReminderWindow(cycle.kpiSetupEnd, reminderWindow)) {
       for (const employee of activeEmployees) {
         const result = await queueNotification(
           {
@@ -1336,7 +1351,7 @@ export async function enqueueLifecycleReminders(
       }
     }
 
-    if (cycle.ceoAdjustStart) {
+    if (isWithinLifecycleReminderWindow(cycle.ceoAdjustStart, reminderWindow)) {
       for (const employee of activeEmployees.filter((item) =>
         ['ROLE_ADMIN', 'ROLE_DIV_HEAD', 'ROLE_CEO'].includes(item.role)
       )) {
@@ -1360,7 +1375,7 @@ export async function enqueueLifecycleReminders(
       }
     }
 
-    if (cycle.resultOpenStart) {
+    if (isWithinLifecycleReminderWindow(cycle.resultOpenStart, reminderWindow)) {
       const evaluationTargets = await db.evaluation.findMany({
         where: { evalCycleId: cycle.id },
         distinct: ['targetId'],
