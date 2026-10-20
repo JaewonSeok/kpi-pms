@@ -5,6 +5,19 @@ import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowRight, Clipboard, RefreshCcw, RotateCcw, Save } from 'lucide-react'
 import type { PerformanceAssignmentPageData } from '@/server/evaluation-performance-assignments'
+import {
+  applySyncPlan,
+  buildSyncPreviewContext,
+  buildSyncPreviewRows,
+  canApplySyncPlan,
+  formatSyncApplyMessage,
+  loadSyncPreview,
+  summarizeSyncPlan,
+  type SyncPlan,
+  type SyncPostResult,
+  type SyncPreviewContext,
+  type SyncPreviewRow,
+} from '@/lib/performance-assignment-sync-preview'
 
 type PerformanceAssignmentAdminClientProps = {
   initialData: PerformanceAssignmentPageData
@@ -18,6 +31,25 @@ function buildDraftEvaluatorMap(data: PerformanceAssignmentPageData) {
   return Object.fromEntries(
     (data.rows ?? []).map((row) => [`${row.targetId}:${row.evalStage}`, row.evaluatorId ?? ''])
   )
+}
+
+async function postAssignmentAction(body: Record<string, unknown>): Promise<SyncPostResult> {
+  const response = await fetch('/api/admin/performance-assignments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const payload = (await response.json().catch(() => null)) as {
+    success?: boolean
+    data?: unknown
+    error?: { code?: string; message?: string }
+  } | null
+  return {
+    ok: response.ok && Boolean(payload?.success),
+    status: response.status,
+    data: payload?.data,
+    error: payload?.error,
+  }
 }
 
 function parseResponse<T>(json: unknown): T {
@@ -66,6 +98,7 @@ export function PerformanceAssignmentAdminClient({
   const [draftEvaluatorIds, setDraftEvaluatorIds] = useState<Record<string, string>>(
     buildDraftEvaluatorMap(initialData)
   )
+  const [syncPlan, setSyncPlan] = useState<SyncPlan | null>(null)
 
   useEffect(() => {
     setData(initialData)
@@ -73,7 +106,52 @@ export function PerformanceAssignmentAdminClient({
     setNotice('')
     setErrorNotice('')
     setBusyKey(null)
+    setSyncPlan(null)
   }, [initialData])
+
+  // 자동 동기화는 바로 적용하지 않는다. 먼저 미리보기를 불러와 확인받는다.
+  async function openSyncPreview() {
+    if (!data.selectedCycleId) return
+    setNotice('')
+    setErrorNotice('')
+    setBusyKey('sync')
+    try {
+      setSyncPlan(await loadSyncPreview({ evalCycleId: data.selectedCycleId, post: postAssignmentAction }))
+    } catch (error) {
+      setErrorNotice(error instanceof Error ? error.message : '자동 동기화 미리보기를 불러오지 못했습니다.')
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  async function applySync() {
+    if (!data.selectedCycleId || !syncPlan) return
+    setNotice('')
+    setErrorNotice('')
+    setBusyKey('sync-apply')
+    try {
+      const outcome = await applySyncPlan<PerformanceAssignmentPageData>({
+        plan: syncPlan,
+        evalCycleId: data.selectedCycleId,
+        post: postAssignmentAction,
+      })
+      if (outcome.kind === 'applied') {
+        setData(outcome.page)
+        setDraftEvaluatorIds(buildDraftEvaluatorMap(outcome.page))
+        setSyncPlan(null)
+        setNotice(formatSyncApplyMessage(outcome.result))
+      } else if (outcome.kind === 'plan-changed') {
+        setSyncPlan(outcome.plan)
+        setErrorNotice(outcome.message)
+      } else {
+        setErrorNotice(outcome.message)
+      }
+    } catch (error) {
+      setErrorNotice(error instanceof Error ? error.message : '자동 동기화를 적용하지 못했습니다.')
+    } finally {
+      setBusyKey(null)
+    }
+  }
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -213,21 +291,12 @@ export function PerformanceAssignmentAdminClient({
             <div className="grid gap-3 sm:grid-cols-3">
               <button
                 type="button"
-                onClick={() =>
-                  void runAction(
-                    {
-                      action: 'sync',
-                      evalCycleId: data.selectedCycleId,
-                    },
-                    '자동 배정 기준을 현재 주기에 다시 적용했습니다.',
-                    'sync'
-                  )
-                }
+                onClick={() => void openSyncPreview()}
                 disabled={!data.selectedCycleId || busyKey !== null}
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
               >
                 <RefreshCcw className="mr-2 h-4 w-4" />
-                자동 동기화
+                자동 배정 미리보기
               </button>
               <Link
                 href="/admin/eval-cycle"
@@ -245,6 +314,15 @@ export function PerformanceAssignmentAdminClient({
           </div>
         </div>
       </section>
+
+      {syncPlan ? (
+        <PerformanceAssignmentSyncPreviewPanel
+          plan={syncPlan}
+          busy={busyKey !== null}
+          onApply={() => void applySync()}
+          onClose={() => setSyncPlan(null)}
+        />
+      ) : null}
 
       {data.routingReadiness ? (
         <EvaluatorRoutingReadinessPanel readiness={data.routingReadiness} />
@@ -486,6 +564,118 @@ function MetricCard(props: { label: string; value: string }) {
         {props.label}
       </div>
       <div className="mt-2 text-xl font-semibold text-slate-900">{props.value}</div>
+    </div>
+  )
+}
+
+export function PerformanceAssignmentSyncPreviewPanel(props: {
+  plan: SyncPlan
+  // 생략하면 계획만으로 만든다(부서는 plan.employeeDepartments, 단계는 배정 행 표와 같은 라벨).
+  context?: SyncPreviewContext
+  busy: boolean
+  onApply: () => void
+  onClose: () => void
+}) {
+  const summary = summarizeSyncPlan(props.plan)
+  const rows = buildSyncPreviewRows(props.plan, props.context ?? buildSyncPreviewContext(props.plan))
+  const canApply = canApplySyncPlan(props.plan)
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-500">자동 동기화 미리보기</p>
+          <h2 className="mt-2 text-xl font-bold text-slate-900">적용하면 아래 내용이 바뀝니다</h2>
+          <p className="mt-2 max-w-3xl text-sm text-slate-500">
+            제출 · 확정된 단계와 수동 배정은 바꾸지 않습니다. 미리보기 이후 배정이 바뀌면 적용이 거절되고 미리보기를 다시 불러옵니다.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            data-sync-apply="true"
+            onClick={props.onApply}
+            disabled={!canApply || props.busy}
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+          >
+            <RefreshCcw className="mr-2 h-4 w-4" />
+            적용
+          </button>
+          <button
+            type="button"
+            onClick={props.onClose}
+            disabled={props.busy}
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            닫기
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <MetricCard label="생성" value={`${summary.createCount.toLocaleString()}건`} />
+        <MetricCard label="평가자 바뀜" value={`${summary.updateCount.toLocaleString()}건`} />
+        <MetricCard
+          label="삭제"
+          value={`${summary.deleteCount.toLocaleString()}건 (진행 중 평가 있음 ${summary.deleteWithInProgressCount.toLocaleString()})`}
+        />
+        <MetricCard label="진행 중 평가 이관" value={`${summary.transferCount.toLocaleString()}건`} />
+        <MetricCard label="변경 없음" value={`${summary.unchangedCount.toLocaleString()}건`} />
+      </div>
+      <div className="mt-4 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
+        <SummaryPill label="수동 유지" value={summary.preservedManualCount} />
+        <SummaryPill label="잠겨서 못 바꿈" value={summary.lockedSkippedCount} />
+        <SummaryPill label="퇴사자 수동 배정" value={summary.manualInactiveCount} />
+      </div>
+
+      {canApply ? (
+        <SyncPreviewTable title="바뀔 내용" rows={rows.writes} />
+      ) : (
+        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          바뀔 것이 없습니다.
+        </div>
+      )}
+      {rows.locked.length ? <SyncPreviewTable title="잠겨서 못 바꿈" rows={rows.locked} /> : null}
+      {rows.manualInactive.length ? <SyncPreviewTable title="퇴사자 수동 배정" rows={rows.manualInactive} /> : null}
+    </section>
+  )
+}
+
+function SyncPreviewTable(props: { title: string; rows: SyncPreviewRow[] }) {
+  return (
+    <div className="mt-5">
+      <div className="text-sm font-semibold text-slate-900">
+        {props.title} {props.rows.length.toLocaleString()}건
+      </div>
+      <div className="mt-2 overflow-x-auto">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>
+              <th className="px-4 py-3 text-left font-semibold">구분</th>
+              <th className="px-4 py-3 text-left font-semibold">대상자</th>
+              <th className="px-4 py-3 text-left font-semibold">부서</th>
+              <th className="px-4 py-3 text-left font-semibold">평가 단계</th>
+              <th className="px-4 py-3 text-left font-semibold">이전 → 이후 평가자</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {props.rows.map((row) => (
+              <tr key={row.key} className="align-top">
+                <td className="px-4 py-3 text-slate-700">
+                  {row.kindLabel}
+                  {row.note ? <div className="mt-1 text-xs text-amber-700">{row.note}</div> : null}
+                </td>
+                <td className="px-4 py-3 font-semibold text-slate-900">{row.targetName}</td>
+                <td className="px-4 py-3 text-slate-700">{row.department}</td>
+                <td className="px-4 py-3 text-slate-700">{row.stageLabel}</td>
+                <td className="px-4 py-3 text-slate-700">
+                  {row.beforeName} → {row.afterName}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
