@@ -127,6 +127,36 @@ function buildStageEvaluation(params: {
   }
 }
 
+const ASSIGNMENT_EVALUATORS: Record<string, { id: string; empName: string; role: string; position: string; status: string; jobTitle: string | null; department: { deptName: string } }> = {
+  'emp-team-leader': { id: 'emp-team-leader', empName: 'Leader Reviewer', role: 'ROLE_TEAM_LEADER', position: 'TEAM_LEADER', status: 'ACTIVE', jobTitle: null, department: { deptName: '영업팀' } },
+  'emp-section-chief': { id: 'emp-section-chief', empName: 'Section Reviewer', role: 'ROLE_SECTION_CHIEF', position: 'DIRECTOR', status: 'ACTIVE', jobTitle: null, department: { deptName: '사업부' } },
+  'emp-div-head': { id: 'emp-div-head', empName: 'Division Reviewer', role: 'ROLE_DIV_HEAD', position: 'DIRECTOR', status: 'ACTIVE', jobTitle: null, department: { deptName: '본부' } },
+  'emp-ceo': { id: 'emp-ceo', empName: 'CEO Reviewer', role: 'ROLE_CEO', position: 'CEO', status: 'ACTIVE', jobTitle: null, department: { deptName: '대표이사실' } },
+}
+
+// 체인은 evaluation_assignments 행으로 정한다. 대상자(emp-target)의 단계별 평가자를 행으로 돌려준다.
+function stubTargetAssignments(evaluatorIdByStage: Record<string, string>): PrismaMethod {
+  return async (args: { where?: { targetId?: string } }) => {
+    if (args?.where?.targetId !== 'emp-target') {
+      return []
+    }
+
+    return Object.entries(evaluatorIdByStage).map(([evalStage, evaluatorId]) => ({
+      evalStage,
+      evaluatorId,
+      evaluator: ASSIGNMENT_EVALUATORS[evaluatorId],
+    }))
+  }
+}
+
+// 기본 대상자 프로필의 슬롯(팀장 · 실장 · 본부장)과 대표를 같은 의미의 배정 행으로 옮긴 것.
+const DEFAULT_TARGET_ASSIGNMENTS = {
+  FIRST: 'emp-team-leader',
+  SECOND: 'emp-section-chief',
+  FINAL: 'emp-div-head',
+  CEO_ADJUST: 'emp-ceo',
+}
+
 async function withStubbedWorkbenchData(
   overrides: Partial<Record<string, PrismaMethod>>,
   fn: () => Promise<void>
@@ -410,6 +440,7 @@ async function main() {
 
     await withStubbedWorkbenchData(
       {
+        evaluationAssignmentFindMany: stubTargetAssignments(DEFAULT_TARGET_ASSIGNMENTS),
         monthlyRecordFindMany: async () => {
           throw new Error('monthly source failed')
         },
@@ -434,6 +465,7 @@ async function main() {
 
     await withStubbedWorkbenchData(
       {
+        evaluationAssignmentFindMany: stubTargetAssignments(DEFAULT_TARGET_ASSIGNMENTS),
         monthlyRecordFindMany: async () => [
           {
             id: 'mr-1',
@@ -621,6 +653,12 @@ async function main() {
 
           return null
         },
+        // 2차(SECOND)는 행이 없어 건너뛴다.
+        evaluationAssignmentFindMany: stubTargetAssignments({
+          FIRST: 'emp-team-leader',
+          FINAL: 'emp-div-head',
+          CEO_ADJUST: 'emp-ceo',
+        }),
         evaluationFindMany: async (args: { include?: Record<string, unknown>; select?: Record<string, unknown> }) => {
           if (args?.include?.items) {
             return [

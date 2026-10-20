@@ -13,6 +13,22 @@ async function run(name: string, fn: () => Promise<void> | void) {
   }
 }
 
+// 체인은 evaluation_assignments 행으로 정한다(직원 슬롯은 평가자 결정에 쓰지 않는다).
+// 아래 파라미터는 단계별 평가자를 뜻하고, 같은 의미의 배정 행으로 옮겨 넣는다.
+const REVIEWER_PROFILES: Record<string, { id: string; empName: string; role: string; position: string; jobTitle: string | null; department: { deptName: string }; status: string }> = {
+  'emp-team-leader': { id: 'emp-team-leader', empName: 'Leader Reviewer', role: 'ROLE_TEAM_LEADER', position: 'TEAM_LEADER', jobTitle: '팀장', department: { deptName: 'Sales' }, status: 'ACTIVE' },
+  'emp-section-chief': { id: 'emp-section-chief', empName: 'Section Reviewer', role: 'ROLE_SECTION_CHIEF', position: 'DIRECTOR', jobTitle: '실장', department: { deptName: 'Section Office' }, status: 'ACTIVE' },
+  'emp-div-head': { id: 'emp-div-head', empName: 'Division Reviewer', role: 'ROLE_DIV_HEAD', position: 'DIRECTOR', jobTitle: '본부장', department: { deptName: 'Division HQ' }, status: 'ACTIVE' },
+  'emp-ceo': { id: 'emp-ceo', empName: 'CEO Reviewer', role: 'ROLE_CEO', position: 'CEO', jobTitle: '대표이사', department: { deptName: 'CEO Office' }, status: 'ACTIVE' },
+  'emp-admin-leader': { id: 'emp-admin-leader', empName: 'Admin Leader Reviewer', role: 'ROLE_ADMIN', position: 'MEMBER', jobTitle: '팀장', department: { deptName: 'Sales' }, status: 'ACTIVE' },
+  'emp-admin-plain': { id: 'emp-admin-plain', empName: 'Admin Plain Reviewer', role: 'ROLE_ADMIN', position: 'MEMBER', jobTitle: null, department: { deptName: 'Sales' }, status: 'ACTIVE' },
+}
+
+function toAssignmentRow(evalStage: string, evaluatorId: string | null | undefined) {
+  if (!evaluatorId) return null
+  return { evalStage, evaluatorId, evaluator: REVIEWER_PROFILES[evaluatorId] }
+}
+
 function createStageChainDb(params?: {
   teamLeaderId?: string | null
   sectionChiefId?: string | null
@@ -20,7 +36,15 @@ function createStageChainDb(params?: {
   ceoPresent?: boolean
   persistedAssignments?: Array<any>
 }) {
-  const persistedAssignments = params?.persistedAssignments ?? []
+  const explicitRows = params?.persistedAssignments ?? []
+  const explicitStages = new Set(explicitRows.map((row) => row.evalStage))
+  const stageRows = [
+    toAssignmentRow('FIRST', params?.teamLeaderId === undefined ? 'emp-team-leader' : params.teamLeaderId),
+    toAssignmentRow('SECOND', params?.sectionChiefId === undefined ? 'emp-section-chief' : params.sectionChiefId),
+    toAssignmentRow('FINAL', params?.divisionHeadId === undefined ? 'emp-div-head' : params.divisionHeadId),
+    toAssignmentRow('CEO_ADJUST', params?.ceoPresent === false ? null : 'emp-ceo'),
+  ].filter((row): row is NonNullable<typeof row> => Boolean(row) && !explicitStages.has(row!.evalStage))
+  const persistedAssignments = [...stageRows, ...explicitRows]
 
   return {
     employee: {
