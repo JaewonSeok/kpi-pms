@@ -2290,6 +2290,16 @@ export const AdminPerformanceAssignmentActionSchema = z.discriminatedUnion('acti
     action: z.literal('syncPreview'),
     evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
   }),
+  // 자기평가 일괄 생성. sync 와 같이 미리보기 지문을 받아 실행한다. 없으면 서비스가 409 로 거절한다.
+  z.object({
+    action: z.literal('population'),
+    evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
+    fingerprint: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal('populationPreview'),
+    evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
+  }),
   z.object({
     action: z.literal('override'),
     evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),

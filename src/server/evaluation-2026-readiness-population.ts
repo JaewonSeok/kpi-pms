@@ -8,6 +8,8 @@ import {
 } from '@/lib/evaluation-policy-2026-preview-metadata'
 import { get2026EvaluationFeatureFlags } from '@/lib/feature-flags'
 import { AppError } from '@/lib/utils'
+import type { EvaluationRole } from '@/lib/evaluation-leader-role'
+import { buildSelfEvaluationPopulationPlan, isSelfEvaluationItemKpi } from '@/server/evaluation-self-population'
 import { canAccessEvaluationPreview2026 } from '@/server/evaluation-preview-2026-loader'
 import {
   getEvaluation2026GradePolicyReadiness,
@@ -79,6 +81,8 @@ type ActiveEmployee2026 = {
   position?: string | null
   managerId?: string | null
   teamLeaderId?: string | null
+  status?: string | null
+  jobTitle?: string | null
   department?: {
     id?: string
     deptName?: string | null
@@ -1019,7 +1023,7 @@ function makeEmployeeSummary(params: {
   }
 }
 
-function countMissingPolicyCategoriesForKpis(kpis: PersonalKpi2026[]) {
+function countMissingPolicyCategoriesForKpis(kpis: Array<{ policyCategory: string | null }>) {
   return kpis.filter((kpi) => !kpi.policyCategory).length
 }
 
@@ -1210,12 +1214,13 @@ function buildScorePolicyReadiness2026(params: {
   activeEmployees: ActiveEmployee2026[]
   personalKpis: PersonalKpi2026[]
   departmentsById: Map<string, DepartmentNode2026>
-  operationalStatusByKpiId: Map<string, PersonalKpiOperationalStatus>
+  // 확정 KPI id(DB status CONFIRMED, LOCKED 포함).
+  confirmedKpiIds: ReadonlySet<string>
 }): Evaluation2026ScorePolicyReadiness {
   const employeesById = new Map(params.activeEmployees.map((employee) => [employee.id, employee]))
   const activeEmployeeIds = new Set(employeesById.keys())
   const activeKpis = params.personalKpis.filter((kpi) => activeEmployeeIds.has(kpi.employeeId))
-  const confirmedKpis = activeKpis.filter((kpi) => params.operationalStatusByKpiId.get(kpi.id) === 'CONFIRMED')
+  const confirmedKpis = activeKpis.filter((kpi) => params.confirmedKpiIds.has(kpi.id))
   const kpisByEmployeeId = new Map<string, PersonalKpi2026[]>()
   const violations: Evaluation2026ScorePolicyViolation[] = []
 
@@ -2610,9 +2615,13 @@ function buildMboSetupCoverage2026(params: {
   personalKpis: PersonalKpi2026[]
   departmentsById: Map<string, DepartmentNode2026>
   operationalStatusByKpiId: Map<string, PersonalKpiOperationalStatus>
+  // 확정 집계의 기준(DB status CONFIRMED, LOCKED 포함). 상태 분포는 운영 상태 그대로 나눈다.
+  confirmedKpiIds: ReadonlySet<string>
 }) {
   const kpisByEmployeeId = new Map<string, PersonalKpi2026[]>()
   const employeeStatusSets = new Map<string, Set<PersonalKpiOperationalStatus>>()
+  const hasConfirmedKpi = (employeeId: string) =>
+    (kpisByEmployeeId.get(employeeId) ?? []).some((kpi) => params.confirmedKpiIds.has(kpi.id))
   const activeEmployeeIds = new Set(params.activeEmployees.map((employee) => employee.id))
   const activeEmployeesById = new Map(params.activeEmployees.map((employee) => [employee.id, employee]))
 
@@ -2734,9 +2743,7 @@ function buildMboSetupCoverage2026(params: {
       const statuses = employeeStatusSets.get(employee.id) ?? new Set()
       return statuses.has('SUBMITTED') || statuses.has('MANAGER_REVIEW')
     }).length
-    const employeesWithConfirmedPersonalKpiCount = employees.filter((employee) =>
-      (employeeStatusSets.get(employee.id) ?? new Set()).has('CONFIRMED')
-    ).length
+    const employeesWithConfirmedPersonalKpiCount = employees.filter((employee) => hasConfirmedKpi(employee.id)).length
     const employeesMissingAnyPersonalKpiCount = employees.filter((employee) => !kpisByEmployeeId.has(employee.id)).length
 
     return {
@@ -2806,7 +2813,7 @@ function buildMboSetupCoverage2026(params: {
         draftPersonalKpiCount: statuses.filter((item) => item === 'DRAFT').length,
         submittedPersonalKpiCount: statuses.filter((item) => item === 'SUBMITTED').length,
         managerReviewPersonalKpiCount: statuses.filter((item) => item === 'MANAGER_REVIEW').length,
-        confirmedPersonalKpiCount: statuses.filter((item) => item === 'CONFIRMED').length,
+        confirmedPersonalKpiCount: employeeKpis.filter((kpi) => params.confirmedKpiIds.has(kpi.id)).length,
         missingPolicyCategoryCount: employeeKpis.filter((kpi) => !kpi.policyCategory).length,
         linkedOrgKpiPersonalKpiCount: employeeKpis.filter((kpi) => Boolean(kpi.linkedOrgKpiId)).length,
       } satisfies Evaluation2026MboSetupEmployeeMonitoringRow
@@ -2861,7 +2868,7 @@ function buildMboSetupCoverage2026(params: {
     employeesWithSubmittedPersonalKpiCount: countEmployeesWithStatus(
       (statuses) => statuses.has('SUBMITTED') || statuses.has('MANAGER_REVIEW')
     ),
-    employeesWithConfirmedPersonalKpiCount: countEmployeesWithStatus((statuses) => statuses.has('CONFIRMED')),
+    employeesWithConfirmedPersonalKpiCount: params.activeEmployees.filter((employee) => hasConfirmedKpi(employee.id)).length,
     employeesMissingAnyPersonalKpiCount: params.activeEmployees.filter((employee) => !kpisByEmployeeId.has(employee.id)).length,
     personalKpiStatusDistribution,
     categoryDistribution,
@@ -2931,6 +2938,8 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
         position: true,
         managerId: true,
         teamLeaderId: true,
+        status: true,
+        jobTitle: true,
         department: {
           select: {
             id: true,
@@ -3169,9 +3178,11 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
   const operationalStatusByKpiId: Map<string, PersonalKpiOperationalStatus> = new Map(
     typedPersonalKpis.map((kpi) => [kpi.id, toOperationalStatus2026(kpi, logsByKpiId)])
   )
-  const confirmedPersonalKpis = typedPersonalKpis.filter(
-    (kpi) => operationalStatusByKpiId.get(kpi.id) === 'CONFIRMED'
+  // 확정 = DB status CONFIRMED(운영 상태 LOCKED 포함). 자기평가 항목과 같은 기준이고, dry-run 의 확정 집계는 모두 이 집합을 쓴다.
+  const confirmedKpiIds: ReadonlySet<string> = new Set(
+    typedPersonalKpis.filter((kpi) => isSelfEvaluationItemKpi(kpi)).map((kpi) => kpi.id)
   )
+  const confirmedPersonalKpis = typedPersonalKpis.filter((kpi) => confirmedKpiIds.has(kpi.id))
   const kpisByEmployeeId = new Map<string, PersonalKpi2026[]>()
 
   for (const kpi of confirmedPersonalKpis) {
@@ -3192,48 +3203,64 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
   let existingEvaluationItemsSkippedCount = 0
   let policyCategoryMissingCount = 0
 
-  for (const employee of activeEmployees as ActiveEmployee2026[]) {
-    const confirmedKpis = kpisByEmployeeId.get(employee.id) ?? []
-    const summary = makeEmployeeSummary({
-      employee,
-      confirmedPersonalKpiCount: confirmedKpis.length,
+  // 자기평가 생성 예정 · 건너뜀 · 확정 KPI 없음은 일괄 생성(population)과 같은 계획에서 가져온다.
+  // 대상은 평가 대상 함수(대표 제외), 항목은 DB status CONFIRMED 전부(운영 상태 LOCKED 포함)다.
+  const selfEvaluationPlan = buildSelfEvaluationPopulationPlan({
+    evalCycleId: cycle.id,
+    cycleStatus: cycle.status,
+    departments: departments as DepartmentNode2026[],
+    employees: (activeEmployees as ActiveEmployee2026[]).map((employee) => ({
+      ...employee,
+      role: (employee.role ?? 'ROLE_MEMBER') as EvaluationRole,
+      status: employee.status ?? '',
+      jobTitle: employee.jobTitle ?? null,
+    })),
+    personalKpis: typedPersonalKpis,
+    existingSelfEvaluations: selfEvaluations,
+  })
+  const summaryOf = (employeeId: string, confirmedPersonalKpiCount: number) =>
+    makeEmployeeSummary({
+      employee: activeEmployeesById.get(employeeId)!,
+      confirmedPersonalKpiCount,
       departmentsById,
     })
 
-    if (!confirmedKpis.length) {
-      employeesMissingConfirmedPersonalKpi.push(summary)
-      continue
-    }
+  for (const entry of selfEvaluationPlan.noConfirmedKpi) {
+    employeesMissingConfirmedPersonalKpi.push(summaryOf(entry.employeeId, 0))
+  }
 
-    employeesWithConfirmedPersonalKpi.push(summary)
-    const existingSelfEvaluation = selfEvaluationByTargetId.get(employee.id)
-    if (existingSelfEvaluation) {
-      const missing = countMissingPolicyCategoriesForExistingItems(existingSelfEvaluation)
-      existingEvaluationItemsSkippedCount += existingSelfEvaluation.items.length
-      policyCategoryMissingCount += missing
-      existingSelfEvaluationsSkipped.push({
-        evaluationId: existingSelfEvaluation.id,
-        employeeId: employee.id,
-        employeeName: employee.empName,
-        departmentName: summary.departmentName,
-        confirmedPersonalKpiCount: confirmedKpis.length,
-        existingItemCount: existingSelfEvaluation.items.length,
-        missingPolicyCategoryCount: missing,
-      })
-      continue
-    }
-
-    const missing = countMissingPolicyCategoriesForKpis(confirmedKpis)
+  for (const entry of selfEvaluationPlan.skippedExisting) {
+    const summary = summaryOf(entry.employeeId, entry.confirmedKpiCount)
+    if (entry.confirmedKpiCount > 0) employeesWithConfirmedPersonalKpi.push(summary)
+    const existingSelfEvaluation = selfEvaluationByTargetId.get(entry.employeeId)!
+    const missing = countMissingPolicyCategoriesForExistingItems(existingSelfEvaluation)
+    existingEvaluationItemsSkippedCount += existingSelfEvaluation.items.length
     policyCategoryMissingCount += missing
-    wouldCreateEvaluationItemCount += confirmedKpis.length
-    wouldCreateSelfEvaluations.push({
-      employeeId: employee.id,
-      employeeName: employee.empName,
+    existingSelfEvaluationsSkipped.push({
+      evaluationId: existingSelfEvaluation.id,
+      employeeId: entry.employeeId,
+      employeeName: entry.employeeName,
       departmentName: summary.departmentName,
-      confirmedPersonalKpiCount: confirmedKpis.length,
-      wouldCreateItemCount: confirmedKpis.length,
+      confirmedPersonalKpiCount: entry.confirmedKpiCount,
+      existingItemCount: existingSelfEvaluation.items.length,
       missingPolicyCategoryCount: missing,
-      itemTitles: confirmedKpis.slice(0, 5).map((kpi) => kpi.kpiName),
+    })
+  }
+
+  for (const entry of selfEvaluationPlan.create) {
+    const summary = summaryOf(entry.employeeId, entry.kpis.length)
+    employeesWithConfirmedPersonalKpi.push(summary)
+    const missing = countMissingPolicyCategoriesForKpis(entry.kpis)
+    policyCategoryMissingCount += missing
+    wouldCreateEvaluationItemCount += entry.kpis.length
+    wouldCreateSelfEvaluations.push({
+      employeeId: entry.employeeId,
+      employeeName: entry.employeeName,
+      departmentName: summary.departmentName,
+      confirmedPersonalKpiCount: entry.kpis.length,
+      wouldCreateItemCount: entry.kpis.length,
+      missingPolicyCategoryCount: missing,
+      itemTitles: entry.kpis.slice(0, 5).map((kpi) => kpi.kpiName),
     })
   }
 
@@ -3310,6 +3337,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     personalKpis: typedPersonalKpis,
     departmentsById,
     operationalStatusByKpiId,
+    confirmedKpiIds,
   })
   const teamKpiHrReviewCoverage = buildTeamKpiHrReviewCoverage2026({
     orgKpis: teamOrgKpis as TeamOrgKpiForHrReview2026[],
@@ -3322,7 +3350,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     activeEmployees: activeEmployees as ActiveEmployee2026[],
     personalKpis: typedPersonalKpis,
     departmentsById,
-    operationalStatusByKpiId,
+    confirmedKpiIds,
   })
   const policyCategoryMappingReadiness = {
     missingPolicyCategoryCount: typedPersonalKpis.filter((kpi) => !kpi.policyCategory).length,

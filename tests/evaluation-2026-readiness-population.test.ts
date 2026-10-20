@@ -83,6 +83,7 @@ const employees = [
     deptId: 'team-sales',
     role: 'ROLE_MEMBER',
     position: 'MEMBER',
+    status: 'ACTIVE',
     department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
   },
   {
@@ -93,6 +94,7 @@ const employees = [
     deptId: 'team-support',
     role: 'ROLE_MEMBER',
     position: 'MEMBER',
+    status: 'ACTIVE',
     department: { id: 'team-support', deptName: '인사팀', parentDeptId: 'division-support' },
   },
   {
@@ -103,6 +105,7 @@ const employees = [
     deptId: 'team-sales',
     role: 'ROLE_MEMBER',
     position: 'MEMBER',
+    status: 'ACTIVE',
     department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
   },
 ]
@@ -1650,6 +1653,7 @@ async function main() {
         deptId: 'team-sales',
         role: 'ROLE_MEMBER',
         position: 'MEMBER',
+        status: 'ACTIVE',
         department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
       },
       {
@@ -1660,6 +1664,7 @@ async function main() {
         deptId: 'team-sales',
         role: 'ROLE_MEMBER',
         position: 'MEMBER',
+        status: 'ACTIVE',
         department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
       },
       {
@@ -1670,6 +1675,7 @@ async function main() {
         deptId: 'team-sales',
         role: 'ROLE_MEMBER',
         position: 'MEMBER',
+        status: 'ACTIVE',
         department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
       },
       {
@@ -1680,6 +1686,7 @@ async function main() {
         deptId: 'team-support',
         role: 'ROLE_MEMBER',
         position: 'MEMBER',
+        status: 'ACTIVE',
         department: { id: 'team-support', deptName: '인사팀', parentDeptId: 'division-support' },
       },
     ]
@@ -1804,6 +1811,7 @@ async function main() {
       deptId: 'team-sales',
       role: 'ROLE_MEMBER',
       position: 'MEMBER',
+      status: 'ACTIVE',
       department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
     }))
     const finalKpis = finalEmployees.flatMap((employee) => {
@@ -1990,6 +1998,7 @@ async function main() {
         deptId: 'team-sales',
         role: 'ROLE_MEMBER',
         position: 'MEMBER',
+        status: 'ACTIVE',
         department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
       },
     ]
