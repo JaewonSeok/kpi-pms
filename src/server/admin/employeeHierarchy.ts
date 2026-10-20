@@ -162,10 +162,38 @@ const LEADER_ROLE_SLOT: Partial<Record<EvaluationRole, keyof Assignment>> = {
   ROLE_CEO: 'divisionHeadId',
 }
 
+function compareNullableTime(left: Date | null | undefined, right: Date | null | undefined) {
+  const leftTime = left ? left.getTime() : null
+  const rightTime = right ? right.getTime() : null
+  if (leftTime === rightTime) return 0
+  if (leftTime === null) return 1
+  if (rightTime === null) return -1
+  return leftTime - rightTime
+}
+
+function compareId(left: string, right: string) {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+// 같은 버킷에 후보가 여럿이면 먼저 들어간 사람이 뽑힌다. 그 순서를 로더의 orderBy 에 맡기면
+// joinDate·createdAt 이 같은 동률에서 DB 가 돌려준 순서로 결과가 바뀐다. 여기서 정한다:
+// joinDate → createdAt → id 오름차순, 날짜가 없으면 뒤로.
+function sortEmployeesForAssignment<T extends Pick<HierarchyEmployee, 'id' | 'joinDate' | 'createdAt'>>(employees: T[]) {
+  return [...employees].sort(
+    (left, right) =>
+      compareNullableTime(left.joinDate, right.joinDate) ||
+      compareNullableTime(left.createdAt, right.createdAt) ||
+      compareId(left.id, right.id)
+  )
+}
+
 export function buildAssignments(
-  departments: HierarchyDepartment[],
-  employees: HierarchyEmployee[]
+  inputDepartments: HierarchyDepartment[],
+  inputEmployees: HierarchyEmployee[]
 ) {
+  // 입력 순서와 무관한 결과를 내도록 정렬한 사본으로 시작한다.
+  const departments = [...inputDepartments].sort((left, right) => compareId(left.id, right.id))
+  const employees = sortEmployeesForAssignment(inputEmployees)
   const roleBasedAssignments = buildRoleBasedAssignments(departments, employees)
   const activeEmployeeIds = new Set(
     employees.filter((employee) => employee.status === 'ACTIVE').map((employee) => employee.id)
