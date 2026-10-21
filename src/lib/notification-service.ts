@@ -578,6 +578,28 @@ export async function sendNotificationTemplateTest(
         })
       })
     } else {
+      // 큐 발송(deliverEmailJob)과 같은 가드: 대표 메일 차단 → allowlist. 막히면 보내지 않고 사유를 돌려준다.
+      const suppressReason: string | null = (await getCeoRecipientIds(db)).has(recipient.id)
+        ? 'CEO_EMAIL_SUPPRESSED'
+        : resolveAllowlistSuppressReason(recipient.gwsEmail)
+      if (suppressReason) {
+        await db.notificationJob.update({
+          where: { id: job.id },
+          data: {
+            status: NotificationJobStatus.SUPPRESSED,
+            suppressedAt: new Date(),
+            suppressReason,
+          },
+        })
+        return {
+          jobId: job.id,
+          channel: params.channel,
+          recipientName: recipient.empName,
+          recipientEmail: recipient.gwsEmail,
+          suppressReason,
+        }
+      }
+
       if (!recipient.gwsEmail) {
         throw new Error('테스트 이메일을 받을 Google Workspace 이메일이 등록되어 있지 않습니다.')
       }
@@ -649,6 +671,7 @@ export async function sendNotificationTemplateTest(
     channel: params.channel,
     recipientName: recipient.empName,
     recipientEmail: recipient.gwsEmail,
+    suppressReason: null as string | null,
   }
 }
 
