@@ -16,6 +16,7 @@ import {
   type EvaluationStageForDailyWorkRule2026,
 } from '@/server/kpi-alignment-policy-2026'
 import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
+import { resolveItemPolicyCategory } from '@/lib/evaluation-item-policy-category'
 
 export async function PATCH(
   request: Request,
@@ -128,7 +129,7 @@ export async function PATCH(
         // category !== DAILY_WORK 또는 cycleYear !== 2026이면 helper가 즉시 skip.
         // stage gate(SELF 차단)는 dailyWorkScoringRule.active dormant 게이트 뒤로 분리.
         const dwValidation = validateDailyWorkScoreForPersistence2026({
-          category: (currentItem.policyCategory ?? null) as
+          category: resolveItemPolicyCategory(currentItem) as
             | EvaluationPolicyItemCategoryCode
             | null,
           score: normalizedScore,
@@ -156,7 +157,7 @@ export async function PATCH(
           if (typeof inputAdjustmentScore === 'number' && inputAdjustmentScore !== 0) {
             const validation = validateAdjustment2026({
               itemId: currentItem.id,
-              category: (currentItem.policyCategory ?? null) as
+              category: resolveItemPolicyCategory(currentItem) as
                 | EvaluationPolicyItemCategoryCode
                 | null,
               achievementLevel: currentItem.targetAchievementLevel as
@@ -192,7 +193,7 @@ export async function PATCH(
       // normalizedScore가 null인 항목은 helper Map에 안 들어가고 fallback으로 그대로 null 유지.
       const belowTargetItems: BelowTargetPersistenceItem2026[] = collectedItems.map((collected) => ({
         id: collected.currentItem.id,
-        category: (collected.currentItem.policyCategory ?? null) as
+        category: resolveItemPolicyCategory(collected.currentItem) as
           | EvaluationPolicyItemCategoryCode
           | null,
         normalizedScore: collected.normalizedScore,

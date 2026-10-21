@@ -26,6 +26,7 @@ import {
   type EvaluationAdjustmentStage,
 } from '@/server/evaluation-scoring-2026'
 import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
+import { resolveItemPolicyCategory } from '@/lib/evaluation-item-policy-category'
 import { resolveTargetAmount } from '@/lib/resolve-target-amount'
 import { getLatestEmployeeMidReviewSummary, type MidReviewSummaryViewModel } from '@/server/mid-review'
 import {
@@ -1661,8 +1662,8 @@ export async function getEvaluationWorkbenchPageData(
           weight: item.personalKpi.weight,
           linkedOrgKpiTitle: item.personalKpi.linkedOrgKpi?.kpiName ?? null,
           linkedOrgKpiId: item.personalKpi.linkedOrgKpi?.id ?? null,
-          policyCategory:
-            (item.policyCategory as EvaluationPolicyItemCategoryCode | null | undefined) ?? null,
+          // 항목 값이 비면 개인 KPI 값을 쓴다(2026 점수 미리보기와 같은 규칙).
+          policyCategory: resolveItemPolicyCategory(item) as EvaluationPolicyItemCategoryCode | null,
           targetValue: item.personalKpi.targetValue,
           definition: item.personalKpi.definition,
           recentAchievementRate: latestRecord?.achievementRate ?? null,
