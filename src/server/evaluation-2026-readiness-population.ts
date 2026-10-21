@@ -1,6 +1,7 @@
 import type { Session } from 'next-auth'
 import { prisma } from '@/lib/prisma'
 import { EVALUATION_POLICY_2026, type EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
+import { resolveItemPolicyCategory } from '@/lib/evaluation-item-policy-category'
 import {
   readPolicy2026OfficialReadinessEnabled,
   readPolicy2026PreviewMappings,
@@ -1028,7 +1029,7 @@ function countMissingPolicyCategoriesForKpis(kpis: Array<{ policyCategory: strin
 }
 
 function countMissingPolicyCategoriesForExistingItems(evaluation: ExistingSelfEvaluation2026) {
-  return evaluation.items.filter((item) => !(item.policyCategory ?? item.personalKpi?.policyCategory ?? null)).length
+  return evaluation.items.filter((item) => !resolveItemPolicyCategory(item)).length
 }
 
 function addBlocker(params: {

@@ -9,6 +9,7 @@ import type { Session } from 'next-auth'
 import { prisma } from '@/lib/prisma'
 import { AppError, calcPdcaScore } from '@/lib/utils'
 import type { AiCapabilityRecognitionRouteCode } from '@/lib/evaluation-policy-2026'
+import { resolveItemPolicyCategory } from '@/lib/evaluation-item-policy-category'
 import {
   resolvePolicy2026PreviewSalesGroup,
   resolvePolicy2026TeamMemberSalesThresholdDecision,
@@ -219,7 +220,7 @@ function buildRawItemsForPreview2026(evaluation: LoadedEvaluation): EvaluationPr
   return evaluation.items.map((item) => ({
     id: item.id,
     title: item.personalKpi.kpiName,
-    policyCategory: normalizePolicyCategory(item.policyCategory ?? item.personalKpi.policyCategory),
+    policyCategory: normalizePolicyCategory(resolveItemPolicyCategory(item)),
     targetAchievementLevel: item.targetAchievementLevel,
     score: firstFiniteNumber(resolveItemScore(item), item.quantScore, item.qualScore),
     basePolicyScore: item.basePolicyScore,

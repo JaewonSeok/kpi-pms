@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog, resolveAuditActor } from '@/lib/audit'
 import { EVALUATION_POLICY_2026, type EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
+import { resolveItemPolicyCategory } from '@/lib/evaluation-item-policy-category'
 import {
   classifyEvaluationPolicyItem,
   type EvaluationPolicyClassificationResult,
@@ -859,7 +860,9 @@ function buildPolicyCategoryWorkbenchItems2026(params: {
     const itemRows = relevantItems.length ? relevantItems : [null]
 
     for (const item of itemRows) {
-      const currentCategory = item?.policyCategory ?? kpi.policyCategory ?? null
+      const currentCategory = resolveItemPolicyCategory({ policyCategory: item?.policyCategory, personalKpi: kpi }) as
+        | EvaluationPolicyItemCategoryCode
+        | null
       const currentContribution = item?.scoreContributionType ?? (
         currentCategory ? contributionTypeForPolicyCategory2026(currentCategory) : null
       )
@@ -1261,7 +1264,9 @@ export async function getEvaluationPolicy2026MappingCandidates(params: {
         tags: personalKpi.tags,
         reviewVerdicts: [],
       })
-      const currentCategory = item.policyCategory ?? personalKpi.policyCategory ?? null
+      const currentCategory = resolveItemPolicyCategory({ policyCategory: item.policyCategory, personalKpi }) as
+        | EvaluationPolicyItemCategoryCode
+        | null
       if (!shouldListPolicyCandidate({ currentCategory, classification })) continue
 
       const workbenchKpi = {

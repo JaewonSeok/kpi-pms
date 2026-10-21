@@ -734,6 +734,57 @@ async function main() {
     )
   })
 
+  await run('ⓓ 워크벤치 · 성과 화면의 카테고리 = 2026 점수 미리보기의 카테고리(같은 항목, 항목 카테고리가 빔)', async () => {
+    const { getEvaluationWorkbenchPageData } = await import('../src/server/evaluation-workbench')
+    const { buildEvaluationPreviewInputFromDb2026 } = await import('../src/server/evaluation-preview-2026-loader')
+
+    // 항목의 policyCategory 는 비고, 개인 KPI 에는 DAILY_WORK 가 있다.
+    const baseRow = buildEvaluationListRow()
+    const item = {
+      ...baseRow.items[0],
+      policyCategory: null,
+      targetAchievementLevel: null,
+      basePolicyScore: null,
+      adjustmentScore: null,
+      adjustmentGroupKey: null,
+      qualScore: null,
+      personalKpi: { ...baseRow.items[0].personalKpi, policyCategory: 'DAILY_WORK' },
+    }
+    const row = { ...baseRow, items: [item] }
+
+    let workbenchCategory: unknown = 'NOT_LOADED'
+    await withStubbedWorkbenchData(
+      {
+        evaluationFindMany: async (args: { include?: Record<string, unknown>; select?: Record<string, unknown> }) => {
+          if (args?.include?.items) return [row]
+          return []
+        },
+      },
+      async () => {
+        const data = await getEvaluationWorkbenchPageData({ session: makeSession(), cycleId: 'cycle-1', evaluationId: 'eval-1' })
+        workbenchCategory = data.selected?.items[0]?.policyCategory ?? null
+      }
+    )
+
+    const previewDb = {
+      evaluation: {
+        findUnique: async () => ({
+          ...row,
+          targetId: 'emp-target',
+          evalCycle: { ...row.evalCycle, evalYear: 2026, performanceDesignConfig: null },
+          target: { id: 'emp-target', deptId: 'dept-1', position: 'MEMBER', role: 'ROLE_MEMBER', department: { id: 'dept-1', deptName: '영업팀' } },
+          items: [item],
+        }),
+      },
+      aiCompetencyGateAssignment: { findFirst: async () => null },
+    }
+    const preview = await buildEvaluationPreviewInputFromDb2026({ evaluationId: 'eval-1', db: previewDb as never })
+    const previewCategory = preview.input.items[0]?.category ?? null
+
+    assert.equal(previewCategory, 'DAILY_WORK')
+    assert.equal(workbenchCategory, previewCategory)
+  })
+
   console.log('Evaluation workbench loader tests completed')
 }
 
