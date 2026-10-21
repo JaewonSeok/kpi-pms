@@ -13,6 +13,12 @@ function toDate(value?: string) {
   return value ? new Date(value) : undefined
 }
 
+// 감사 로그에 남기고 비교하는 값. 날짜는 ISO 문자열로 다룬다.
+function toAuditValue(value: unknown) {
+  if (value instanceof Date) return value.toISOString()
+  return value ?? null
+}
+
 function getReadinessFailures(cycle: {
   kpiSetupStart: Date | null
   kpiSetupEnd: Date | null
@@ -89,15 +95,27 @@ export async function PATCH(request: Request, context: RouteContext) {
       where: { id },
       select: {
         id: true,
+        orgId: true,
+        evalYear: true,
+        cycleName: true,
+        showQuestionWeight: true,
+        showScoreSummary: true,
+        goalEditMode: true,
+        status: true,
         kpiSetupStart: true,
         kpiSetupEnd: true,
         selfEvalStart: true,
         selfEvalEnd: true,
         firstEvalStart: true,
         firstEvalEnd: true,
+        secondEvalStart: true,
+        secondEvalEnd: true,
         finalEvalStart: true,
         finalEvalEnd: true,
+        ceoAdjustStart: true,
+        ceoAdjustEnd: true,
         resultOpenStart: true,
+        resultOpenEnd: true,
         appealDeadline: true,
         _count: { select: { evaluations: true } },
       },
@@ -132,6 +150,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       ...(data.appealDeadline !== undefined ? { appealDeadline: toDate(data.appealDeadline) } : {}),
     }
 
+    // 값이 실제로 바뀐 필드만 감사 로그에 남긴다. 같은 값을 다시 보낸 필드는 넣지 않는다.
+    const existingValues = existing as Record<string, unknown>
+    const changedFields = Object.entries(updateData).filter(
+      ([field, next]) => next !== undefined && toAuditValue(next) !== toAuditValue(existingValues[field])
+    )
+
     const nextCycle = {
       ...existing,
       kpiSetupStart: data.kpiSetupStart !== undefined ? toDate(data.kpiSetupStart) ?? null : existing.kpiSetupStart,
@@ -165,6 +189,19 @@ export async function PATCH(request: Request, context: RouteContext) {
         _count: { select: { evaluations: true } },
       },
     })
+
+    // createAuditLog 는 트랜잭션 클라이언트를 받지 않아, sync 처럼 갱신 뒤 1건을 남긴다.
+    if (changedFields.length) {
+      await createAuditLog({
+        ...resolveAuditActor(session),
+        action: 'EVAL_CYCLE_UPDATE',
+        entityType: 'EvalCycle',
+        entityId: id,
+        oldValue: Object.fromEntries(changedFields.map(([field]) => [field, toAuditValue(existingValues[field])])),
+        newValue: Object.fromEntries(changedFields.map(([field, next]) => [field, toAuditValue(next)])),
+        ...getClientInfo(request),
+      })
+    }
 
     return successResponse(cycle)
   } catch (error) {

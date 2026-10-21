@@ -1704,7 +1704,7 @@ function resolveExtendedTimelineActionKind(
   return resolveTimelineActionKind(action)
 }
 
-function buildCalibrationTimeline(params: {
+export function buildCalibrationTimeline(params: {
   cycle: {
     id: string
     cycleName: string
@@ -1717,7 +1717,9 @@ function buildCalibrationTimeline(params: {
   groups: CandidateGroup[]
   gradeSettings: GradeSettingLite[]
 }) {
-  const timeline: CalibrationViewModel['timeline'] = params.auditLogs.map((log) => {
+  // 평가 주기 수정(EVAL_CYCLE_UPDATE) 로그는 캘리브레이션 타임라인에 보이지 않는다. 다른 로그는 그대로다.
+  const timelineLogs = params.auditLogs.filter((log) => log.action !== 'EVAL_CYCLE_UPDATE')
+  const timeline: CalibrationViewModel['timeline'] = timelineLogs.map((log) => {
     const payload = parseCalibrationPayload(log.newValue)
     return {
       id: log.id,

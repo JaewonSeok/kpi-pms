@@ -1511,7 +1511,7 @@ function buildPercentileLabel(
   return `상위 ${Math.max(1, Math.round(((index + 1) / scores.length) * 100))}%`
 }
 
-function buildCalibrationLogs(params: {
+export function buildCalibrationLogs(params: {
   employeeName: string
   finalStage: EvalStage
   draftGrade: string | null
@@ -1584,7 +1584,8 @@ function buildCalibrationLogs(params: {
     }
   }
 
-  for (const auditLog of params.auditLogs.slice(0, 6)) {
+  // 평가 주기 수정(EVAL_CYCLE_UPDATE) 로그는 결과 이력에 보이지 않는다. 다른 로그는 그대로다.
+  for (const auditLog of params.auditLogs.filter((log) => log.action !== 'EVAL_CYCLE_UPDATE').slice(0, 6)) {
     logs.push({
       date: auditLog.timestamp.toISOString(),
       actor: auditLog.userId,
