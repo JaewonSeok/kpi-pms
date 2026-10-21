@@ -1253,6 +1253,16 @@ export function groupMonthlyKpisByEmployee(
 
 type LifecycleReminderWindow = { gte: Date; lte: Date }
 
+// KST 벽시계 기준 ISO 주(예: 2026-W44). 월요일 00:00 KST 에 바뀐다.
+function getKstIsoWeek(at: Date) {
+  const kst = new Date(at.getTime() + 9 * 60 * 60 * 1000)
+  const isoDay = kst.getUTCDay() || 7
+  const thursday = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + 4 - isoDay))
+  const yearStart = Date.UTC(thursday.getUTCFullYear(), 0, 1)
+  const week = Math.ceil(((thursday.getTime() - yearStart) / (24 * 60 * 60 * 1000) + 1) / 7)
+  return `${thursday.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
+}
+
 // 날짜 리마인더 창(지금부터 3일 뒤까지). 사이클 선택과 리마인더별 발화가 이 창 하나로 판정한다.
 function buildLifecycleReminderWindow(now: Date): LifecycleReminderWindow {
   return { gte: now, lte: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000) }
@@ -1506,7 +1516,8 @@ export async function enqueueLifecycleReminders(
         type: NotificationType.EVALUATION_REMINDER,
         sourceType: 'EvaluationCycleStage',
         sourceId: bucket.cycleId,
-        dedupeToken: `evaluation:${bucket.stageLabel}:${now.toISOString().slice(0, 10)}`,
+        // 평가자당 주 1회: 사이클과 KST 기준 ISO 주로만 묶는다(단계명 · 날짜는 넣지 않는다).
+        dedupeToken: `evaluation:${bucket.cycleId}:${getKstIsoWeek(now)}`,
         payload: {
           stageLabel: bucket.stageLabel,
           pendingCount: bucket.count,
