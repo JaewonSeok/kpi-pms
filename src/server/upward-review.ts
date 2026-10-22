@@ -656,6 +656,8 @@ export async function getUpwardReviewPageData(
           select: {
             id: true,
             roundName: true,
+            status: true,
+            startDate: true,
             endDate: true,
           },
         },
@@ -674,11 +676,17 @@ export async function getUpwardReviewPageData(
       },
       orderBy: [{ round: { endDate: 'asc' } }, { createdAt: 'asc' }],
     })
+    // 미제출 항목은 지금 제출할 수 있는 것(응답 게이트가 열린 라운드)만 보인다. 취소 라운드는 제출 기록도 보이지 않는다.
+    const visibleAssignments = assignments.filter((feedback) =>
+      feedback.round.status === 'CANCELLED'
+        ? false
+        : feedback.status === 'SUBMITTED' || getUpwardRoundResponseGate(feedback.round).open
+    )
 
     return {
       ...baseData,
       overview: {
-        assignments: assignments.map((feedback) => ({
+        assignments: visibleAssignments.map((feedback) => ({
           feedbackId: feedback.id,
           roundId: feedback.roundId,
           roundName: feedback.round.roundName,
