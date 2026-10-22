@@ -636,6 +636,33 @@ export function summarizeUpwardResults(input: SummarizeInput) {
   }
 }
 
+// 대상 본인 · 열람 모드가 허락한 리더만 결과 열람자다(라운드 관리 권한자 · 원문 열람 권한자는 호출하는 쪽에서 먼저 통과).
+// 열람 모드를 먼저 적용한다: 대상자 본인만(TARGET_ONLY)이면 리더 슬롯도 보지 못한다. 다른 모드는 그대로다.
+export function isUpwardResultViewer(params: {
+  actorId: string
+  targetId: string
+  targetPrimaryLeaderId?: string | null
+  targetViewerIds?: string[]
+  settings: Pick<UpwardReviewSettings, 'resultViewerMode'>
+}) {
+  if (params.actorId === params.targetId) {
+    return true
+  }
+
+  if (params.settings.resultViewerMode === 'TARGET_ONLY') {
+    return false
+  }
+
+  if (params.targetViewerIds?.includes(params.actorId)) {
+    return true
+  }
+
+  return (
+    params.settings.resultViewerMode === 'TARGET_AND_PRIMARY_MANAGER' &&
+    params.targetPrimaryLeaderId === params.actorId
+  )
+}
+
 export function canViewUpwardResults(params: {
   actorId: string
   actorRole: SystemRole
@@ -655,16 +682,5 @@ export function canViewUpwardResults(params: {
     return false
   }
 
-  if (params.actorId === params.targetId) {
-    return true
-  }
-
-  if (params.targetViewerIds?.includes(params.actorId)) {
-    return true
-  }
-
-  return (
-    params.settings.resultViewerMode === 'TARGET_AND_PRIMARY_MANAGER' &&
-    params.targetPrimaryLeaderId === params.actorId
-  )
+  return isUpwardResultViewer(params)
 }
