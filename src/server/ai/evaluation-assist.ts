@@ -19,6 +19,11 @@ import { recordOperationalEvent } from '@/lib/operations'
 import { prisma } from '@/lib/prisma'
 import { AppError, EVAL_STAGE_LABELS, POSITION_LABELS } from '@/lib/utils'
 import { getPreviousActiveEvaluationStage } from '@/server/evaluation-performance-assignments'
+import {
+  describeFeedback360EvidenceRound,
+  loadFeedback360EvaluationEvidence,
+  type Feedback360EvidenceRound,
+} from '@/server/feedback-360-evaluation-evidence'
 
 type DraftItemInput = {
   personalKpiId: string
@@ -484,35 +489,20 @@ async function loadEvaluationAssistContext(
     }),
     loadAssistSource({
       title: 'feedback rounds',
-      fallback: [] as Array<{
-        roundName: string
-        roundType: string
-        feedbacks: Array<{ responses: Array<{ textValue: string | null }> }>
-      }>,
+      fallback: [] as Feedback360EvidenceRound[],
       alert: '다면 피드백 일부를 불러오지 못해 현재 KPI와 체크인 근거 중심으로 초안을 생성합니다.',
-      load: () =>
-        db.multiFeedbackRound.findMany({
-          where: {
-            evalCycleId: evaluation.evalCycleId,
-          },
-          include: {
-            feedbacks: {
-              where: {
-                receiverId: evaluation.targetId,
-                status: 'SUBMITTED',
-              },
-              include: {
-                responses: {
-                  select: {
-                    textValue: true,
-                  },
-                },
-              },
-            },
-          },
-          orderBy: { endDate: 'desc' },
-          take: 3,
-        }),
+      // 360 근거는 공개 · 익명 기준을 거친 집계만 쓴다(feedback-360-evaluation-evidence). 원문은 넣지 않는다.
+      load: async () =>
+        (
+          (
+            await loadFeedback360EvaluationEvidence({
+              db,
+              targetIds: [evaluation.targetId],
+              viewer: { id: params.actorId, role: params.actorRole },
+              evalCycleId: evaluation.evalCycleId,
+            })
+          ).get(evaluation.targetId) ?? []
+        ).slice(0, 3),
     }),
   ])
 
@@ -564,15 +554,9 @@ async function loadEvaluationAssistContext(
         checkin.keyTakeaways || checkin.managerNotes || checkin.ownerNotes || '메모 없음',
       ].join(' / ')
     ),
-    ...feedbackRounds.map((round) => {
-      const highlight =
-        round.feedbacks
-          .flatMap((feedback) => feedback.responses.map((response) => response.textValue || '').filter(Boolean))
-          .slice(0, 2)
-          .join(' / ') || '텍스트 피드백 요약 없음'
-
-      return `${round.roundName} / ${round.roundType} / 응답 ${round.feedbacks.length}건 / ${highlight}`
-    }),
+    ...feedbackRounds.map(
+      (round) => `${round.roundName} / ${round.roundType} / ${describeFeedback360EvidenceRound(round)}`
+    ),
   ].slice(0, 6)
 
   const highlights = [
@@ -584,7 +568,7 @@ async function loadEvaluationAssistContext(
       .map((checkin) => checkin.keyTakeaways || checkin.managerNotes || checkin.ownerNotes || '최근 체크인 요약 없음'),
     ...feedbackRounds
       .slice(0, 1)
-      .map((round) => `${round.roundName} 응답 ${round.feedbacks.length}건이 연결되어 있습니다.`),
+      .map((round) => `${round.roundName} 응답 ${round.raterCount}건이 연결되어 있습니다.`),
   ]
     .filter((item) => item && item.trim().length > 0)
     .slice(0, 8)
