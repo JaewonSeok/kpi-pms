@@ -1,9 +1,11 @@
+import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackRoundStatusSchema } from '@/lib/validations'
+import { isFeedback360RoundEnded } from '@/lib/feedback-360-result-exposure'
 import {
   canManageFeedbackRoundByAccess,
   getFeedbackReviewAdminAccess,
@@ -49,6 +51,7 @@ export async function POST(
         roundName: true,
         roundType: true,
         status: true,
+        documentSettings: true,
         evalCycle: { select: { orgId: true } },
       },
     })
@@ -98,6 +101,46 @@ export async function POST(
       throw new AppError(403, 'FORBIDDEN', '해당 리뷰 라운드를 관리할 권한이 없습니다.')
     }
 
+    const currentSettings =
+      round.documentSettings && typeof round.documentSettings === 'object' && !Array.isArray(round.documentSettings)
+        ? (round.documentSettings as Prisma.JsonObject)
+        : {}
+
+    // 결과 공개: 상태는 그대로 두고 documentSettings.resultReleasedAt 만 쓴다(마이그레이션 없음).
+    // 본인 · 리더는 마감됐고 공개된 라운드의 결과만 본다(feedback-360-result-exposure).
+    if (action === 'RELEASE_RESULTS') {
+      if (!isFeedback360RoundEnded(round.status)) {
+        throw new AppError(400, 'ROUND_NOT_CLOSED', '마감된 라운드만 결과를 공개할 수 있습니다.')
+      }
+
+      const releasedAt = new Date().toISOString()
+      await prisma.multiFeedbackRound.update({
+        where: { id: roundId },
+        data: {
+          documentSettings: {
+            ...currentSettings,
+            resultReleasedAt: releasedAt,
+            resultReleasedById: employee.id,
+          },
+        },
+        select: { id: true },
+      })
+
+      const releaseClientInfo = getClientInfo(request)
+      await createAuditLog({
+        ...resolveAuditActor(session),
+        action: 'FEEDBACK_ROUND_RESULTS_RELEASED',
+        entityType: 'MultiFeedbackRound',
+        entityId: roundId,
+        oldValue: { resultReleasedAt: currentSettings.resultReleasedAt ?? null },
+        newValue: { resultReleasedAt: releasedAt, roundName: round.roundName },
+        ipAddress: releaseClientInfo.ipAddress,
+        userAgent: releaseClientInfo.userAgent,
+      })
+
+      return successResponse({ roundId, status: round.status, resultReleasedAt: releasedAt, message: '결과를 공개했습니다.' })
+    }
+
     let nextStatus: 'COMPLETED' | 'CANCELLED' | 'IN_PROGRESS'
 
     if (action === 'CLOSE') {
@@ -143,9 +186,19 @@ export async function POST(
       nextStatus = 'IN_PROGRESS'
     }
 
+    // REOPEN 은 결과 공개 표시를 지운다. 다시 마감한 뒤 새로 공개해야 본인 · 리더에게 열린다. 다른 설정은 유지한다.
+    const clearsRelease =
+      action === 'REOPEN' && ('resultReleasedAt' in currentSettings || 'resultReleasedById' in currentSettings)
+    const settingsWithoutRelease = Object.fromEntries(
+      Object.entries(currentSettings).filter(([key]) => key !== 'resultReleasedAt' && key !== 'resultReleasedById')
+    ) as Prisma.JsonObject
+
     const updated = await prisma.multiFeedbackRound.update({
       where: { id: roundId },
-      data: { status: nextStatus },
+      data: {
+        status: nextStatus,
+        ...(clearsRelease ? { documentSettings: settingsWithoutRelease } : {}),
+      },
       select: { id: true, status: true },
     })
 
@@ -156,7 +209,11 @@ export async function POST(
       entityType: 'MultiFeedbackRound',
       entityId: roundId,
       oldValue: { status: round.status },
-      newValue: { status: nextStatus, roundName: round.roundName },
+      newValue: {
+        status: nextStatus,
+        roundName: round.roundName,
+        ...(action === 'REOPEN' ? { resultReleaseCleared: clearsRelease } : {}),
+      },
       ipAddress: clientInfo.ipAddress,
       userAgent: clientInfo.userAgent,
     })

@@ -4,7 +4,13 @@ import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackResultViewReceiptSchema } from '@/lib/validations'
+import {
+  canOpenFeedback360Result,
+  isFeedback360ResultRuleRound,
+  readFeedback360ResultReleasedAt,
+} from '@/lib/feedback-360-result-exposure'
 import { getFeedbackResultRecipientRole } from '@/server/feedback-360-admin'
+import { canManageFeedbackRoundByAccess, getFeedbackReviewAdminAccess } from '@/server/feedback-360-access'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -49,6 +55,10 @@ export async function POST(request: Request, context: RouteContext) {
       where: { id: roundId },
       select: {
         id: true,
+        roundType: true,
+        status: true,
+        documentSettings: true,
+        onboardingReviewGeneration: { select: { id: true } },
         evalCycle: {
           select: {
             orgId: true,
@@ -108,6 +118,25 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!canViewResultTarget({ actorId: actor.id, actorRole: actor.role, target })) {
       throw new AppError(403, 'FORBIDDEN', '이 결과를 열람할 권한이 없습니다.')
+    }
+
+    // 라운드 관리자가 아니면 마감 · 공개 뒤에만 결과를 연다(feedback-360-result-exposure).
+    const resultRound = {
+      roundType: round.roundType,
+      status: round.status,
+      isOnboarding: Boolean(round.onboardingReviewGeneration),
+      resultReleasedAt: readFeedback360ResultReleasedAt(round.documentSettings),
+    }
+    if (isFeedback360ResultRuleRound(resultRound)) {
+      const access = await getFeedbackReviewAdminAccess({
+        employeeId: actor.id,
+        actorRole: actor.role,
+        orgId: actor.department.orgId,
+      })
+      const isRoundManager = await canManageFeedbackRoundByAccess({ access, employeeId: actor.id, roundId: round.id })
+      if (!canOpenFeedback360Result({ round: resultRound, isRoundManager })) {
+        throw new AppError(403, 'RESULT_NOT_RELEASED', '라운드가 마감되고 결과가 공개된 뒤에 볼 수 있습니다.')
+      }
     }
 
     if (!round.feedbacks.length) {

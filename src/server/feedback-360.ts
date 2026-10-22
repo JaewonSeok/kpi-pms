@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   DevelopmentPlanStatus,
   FeedbackAdminReviewScope,
   FeedbackDocumentKind,
@@ -67,6 +67,16 @@ import {
   parseFeedbackResultPresentationSettings,
   resolveFeedbackResultPresentationProfile,
 } from '@/lib/feedback-result-presentation'
+import {
+  canOpenFeedback360Result,
+  collectRepeatedFeedback360TagLabels,
+  isFeedback360ResultRuleRound,
+  keepAllowedTagsInComment,
+  readFeedback360ResultReleasedAt,
+  shouldHideFeedback360ReviewerDetails,
+  shouldLimitFeedback360TagsToRepeated,
+  shouldWithholdFeedback360Content,
+} from '@/lib/feedback-360-result-exposure'
 import {
   calculateDevelopmentPlanProgress,
   normalizeDevelopmentPlanActionItems,
@@ -947,6 +957,7 @@ function extractTagLabelsFromOverallComment(comment: string | null | undefined):
 function buildResultWarnings(params: {
   thresholdMet: boolean
   feedbackCount: number
+  sensitivityThreshold: number
   strengths: string[]
   improvements: string[]
 }) {
@@ -954,7 +965,7 @@ function buildResultWarnings(params: {
   if (!params.thresholdMet) {
     warnings.push('익명 기준을 아직 충족하지 못해 일부 문항은 제한적으로만 해석해야 합니다.')
   }
-  if (params.feedbackCount < 3) {
+  if (params.feedbackCount < params.sensitivityThreshold) {
     warnings.push('응답 수가 적어 해석 민감도가 높을 수 있습니다.')
   }
   if (!params.strengths.length || !params.improvements.length) {
@@ -1582,6 +1593,12 @@ export async function getFeedback360PageData(
             targetId: true,
           },
         },
+        // 온보딩 리뷰 라운드는 결과 노출 규칙(feedback-360-result-exposure)의 대상이 아니다.
+        onboardingReviewGeneration: {
+          select: {
+            id: true,
+          },
+        },
         collaborators: {
           select: {
             employeeId: true,
@@ -2199,6 +2216,24 @@ export async function getFeedback360PageData(
       return baseData
     }
 
+    const resultRound = {
+      roundType: selectedRound.roundType,
+      status: selectedRound.status,
+      isAnonymous: selectedRound.isAnonymous,
+      isOnboarding: Boolean(selectedRound.onboardingReviewGeneration),
+      resultReleasedAt: readFeedback360ResultReleasedAt(selectedRound.documentSettings),
+    }
+    if (
+      params.mode === 'results' &&
+      !canOpenFeedback360Result({ round: resultRound, isRoundManager: canManageSelectedRound })
+    ) {
+      return {
+        ...baseData,
+        state: 'permission-denied',
+        message: '라운드가 마감되고 결과가 공개된 뒤에 볼 수 있습니다.',
+      }
+    }
+
     const requestedTargetId = params.empId || employee.id
     const explicitTarget =
       requestedTargetId === employee.id
@@ -2572,9 +2607,12 @@ export async function getFeedback360PageData(
     const overallTagSummaries = submittedTargetFeedbacks
       .filter((f) => (visibilitySettings[f.relationship] ?? 'ANONYMOUS') !== 'PRIVATE')
       .map((f) => ({ feedbackId: f.id, tagLabels: extractTagLabelsFromOverallComment(f.overallComment) }))
+    const isResultRuleRound = isFeedback360ResultRuleRound(resultRound)
     const warnings = buildResultWarnings({
       thresholdMet,
-      feedbackCount: submittedTargetFeedbacks.length,
+      // 결과 노출 규칙 대상 라운드는 익명 기준과 같은 수(SELF 제외)와 같은 기준(minRaters)으로 본다.
+      feedbackCount: isResultRuleRound ? thresholdRaterCount : submittedTargetFeedbacks.length,
+      sensitivityThreshold: isResultRuleRound ? selectedRound.minRaters : 3,
       strengths: resolvedStrengths,
       improvements: resolvedImprovements,
     })
@@ -2670,6 +2708,49 @@ export async function getFeedback360PageData(
       executiveLeaderIds
         .map((leaderId) => submittedTargetFeedbacks.find((feedback) => feedback.giverId === leaderId) ?? null)
         .find((feedback): feedback is NonNullable<typeof leaderFeedback> => Boolean(feedback)) ?? null
+    // 결과 노출 규칙(feedback-360-result-exposure): 기준 미달이면 관리자 외에는 내용을 하나도 보내지 않고,
+    // 태그는 2회 이상 쓰인 것만 보내며, 리더 점수 공개 설정은 문항별 응답에도 적용한다.
+    const withholdContent = shouldWithholdFeedback360Content({
+      round: resultRound,
+      isRoundManager: canManageSelectedRound,
+      thresholdMet,
+    })
+    const limitTagsToRepeated = shouldLimitFeedback360TagsToRepeated({
+      round: resultRound,
+      isRoundManager: canManageSelectedRound,
+    })
+    const repeatedTagLabels = collectRepeatedFeedback360TagLabels(
+      overallTagSummaries.map((summary) => summary.tagLabels)
+    )
+    const exposeComment = (comment: string | null) =>
+      withholdContent ? null : limitTagsToRepeated ? keepAllowedTagsInComment(comment, repeatedTagLabels) : comment
+    const exposedTagSummaries = withholdContent
+      ? []
+      : limitTagsToRepeated
+        ? overallTagSummaries.map((summary) => ({
+            ...summary,
+            tagLabels: summary.tagLabels.filter((label) => repeatedTagLabels.has(label)),
+          }))
+        : overallTagSummaries
+    const hideLeaderRating = isResultRuleRound && !presentationSettings.showLeaderScore && Boolean(leaderFeedback)
+    const exposedGroupedResponses = withholdContent
+      ? []
+      : hideLeaderRating
+        ? groupedResponses.map((group) => ({
+            ...group,
+            answers: group.answers.map((answer) =>
+              answer.feedbackId === leaderFeedback?.id ? { ...answer, ratingValue: null } : answer
+            ),
+          }))
+        : groupedResponses
+    const hideReviewerDetails = shouldHideFeedback360ReviewerDetails({
+      round: resultRound,
+      isRoundManager: canManageSelectedRound,
+    })
+    const exposedFeedbackSignals = withholdContent ? [] : feedbackSignals
+    const exposedDevelopmentPlan = withholdContent ? null : resolvedDevelopmentPlan
+    const exposedDevelopmentFocus = withholdContent ? '조직과 성장' : developmentFocus
+    const exposedTextHighlights = withholdContent ? [] : persistedTextHighlights
     const finalTotalScore = averageFeedbackTotalScores(submittedTargetFeedbacks)
     const finalComment =
       typeof persistedPayload?.anonymousSummary === 'string'
@@ -2683,6 +2764,7 @@ export async function getFeedback360PageData(
         })
       : []
     const managerEffectivenessResult =
+      !withholdContent &&
       resultSelectionSettings.managerEffectiveness.enabled &&
       (resultSelectionSettings.managerEffectiveness.targetScope !== 'MANAGERS_ONLY' ||
         isManagerEffectivenessTarget({ position: target.position }))
@@ -2736,10 +2818,11 @@ export async function getFeedback360PageData(
         title: '팀장 평가',
         reviewerName: leaderFeedback?.giver.empName,
         relationshipLabel: '직속 리더',
-        totalScore: leaderFeedback
-          ? calculateFeedbackResponseTotalScore({ responses: leaderFeedback.responses })
-          : null,
-        comment: leaderFeedback?.overallComment ?? null,
+        totalScore:
+          leaderFeedback && !withholdContent
+            ? calculateFeedbackResponseTotalScore({ responses: leaderFeedback.responses })
+            : null,
+        comment: exposeComment(leaderFeedback?.overallComment ?? null),
         showScore: presentationSettings.showLeaderScore,
         showComment: presentationSettings.showLeaderComment,
       },
@@ -2748,10 +2831,11 @@ export async function getFeedback360PageData(
         title: '상위 평가',
         reviewerName: executiveFeedback?.giver.empName,
         relationshipLabel: '상위 평가권자',
-        totalScore: executiveFeedback
-          ? calculateFeedbackResponseTotalScore({ responses: executiveFeedback.responses })
-          : null,
-        comment: executiveFeedback?.overallComment ?? null,
+        totalScore:
+          executiveFeedback && !withholdContent
+            ? calculateFeedbackResponseTotalScore({ responses: executiveFeedback.responses })
+            : null,
+        comment: exposeComment(executiveFeedback?.overallComment ?? null),
         showScore: presentationSettings.showExecutiveScore,
         showComment: presentationSettings.showExecutiveComment,
       },
@@ -2759,8 +2843,8 @@ export async function getFeedback360PageData(
         id: 'FINAL_RESULT' as const,
         title: '최종 결과',
         relationshipLabel: '종합 결과',
-        totalScore: finalTotalScore,
-        comment: thresholdMet ? finalComment : null,
+        totalScore: withholdContent ? null : finalTotalScore,
+        comment: thresholdMet ? exposeComment(finalComment) : null,
         showScore: presentationSettings.showFinalScore,
         showComment: presentationSettings.showFinalComment,
       },
@@ -2784,11 +2868,11 @@ export async function getFeedback360PageData(
         questionText: question.questionText,
         questionType: question.questionType,
       })),
-      targetFeedbacks: submittedTargetFeedbacks.map((feedback) => ({
+      targetFeedbacks: (withholdContent ? [] : submittedTargetFeedbacks).map((feedback) => ({
         id: feedback.id,
         relationship: feedback.relationship,
         giverName: feedback.giver.empName,
-        overallComment: feedback.overallComment,
+        overallComment: exposeComment(feedback.overallComment),
         submittedAt: feedback.submittedAt ?? feedback.createdAt,
         responses: feedback.responses.map((response) => ({
           questionId: response.questionId,
@@ -2801,7 +2885,7 @@ export async function getFeedback360PageData(
           },
         })),
       })),
-      benchmarkFeedbacks: selectedRound.feedbacks
+      benchmarkFeedbacks: (withholdContent ? [] : selectedRound.feedbacks)
         .filter((feedback) => feedback.status === 'SUBMITTED')
         .map((feedback) => ({
           id: feedback.id,
@@ -2854,41 +2938,47 @@ export async function getFeedback360PageData(
           thresholdMet: reportCache?.thresholdMet ?? thresholdMet,
           roundWeight: selectedRound.weightInFinal,
           summaryCards,
-          categoryScores: persistedCategoryScores,
-          strengths: strengths.length ? strengths : ['아직 충분한 응답이 없어 강점 테마를 생성하지 못했습니다.'],
-          improvements: improvements.length ? improvements : ['익명 기준을 충족하면 개선 신호를 더 선명하게 볼 수 있습니다.'],
+          categoryScores: withholdContent ? [] : persistedCategoryScores,
+          strengths:
+            strengths.length && !withholdContent
+              ? strengths
+              : ['아직 충분한 응답이 없어 강점 테마를 생성하지 못했습니다.'],
+          improvements:
+            improvements.length && !withholdContent
+              ? improvements
+              : ['익명 기준을 충족하면 개선 신호를 더 선명하게 볼 수 있습니다.'],
           anonymousSummary: thresholdMet
             ? '익명성을 유지한 상태로 강점, blind spot, 개발 시그널을 요약해 제공합니다.'
             : `현재 응답 수는 ${thresholdRaterCount}건이며 익명 요약 공개 기준 ${selectedRound.minRaters}건에 아직 미달합니다.`,
-          textHighlights: persistedTextHighlights,
-          groupedResponses,
-          overallTagSummaries,
+          textHighlights: exposedTextHighlights,
+          groupedResponses: exposedGroupedResponses,
+          overallTagSummaries: exposedTagSummaries,
           warnings,
           developmentPlan: {
-            focusArea: resolvedDevelopmentPlan?.focusArea ?? `${developmentFocus} 성장 강화`,
+            focusArea: exposedDevelopmentPlan?.focusArea ?? `${exposedDevelopmentFocus} 성장 강화`,
             actions:
-              resolvedDevelopmentPlan?.actions ?? [
+              exposedDevelopmentPlan?.actions ?? [
                 '다음 체크인에서 blind spot 한 가지를 실제 사례와 함께 점검합니다.',
                 '다음 분기 개인 목표 중 하나를 성장 과제와 직접 연결합니다.',
                 '반복해서 나온 피드백 한 항목을 2주 단위 실험으로 관리합니다.',
               ],
             managerSupport:
-              resolvedDevelopmentPlan?.managerSupport ?? [
+              exposedDevelopmentPlan?.managerSupport ?? [
                 '리더는 행동 예시 기반 피드백을 최소 월 1회 제공합니다.',
                 '다음 1:1에서 실행 결과와 체감 변화를 함께 점검합니다.',
               ],
             nextCheckinTopics:
-              resolvedDevelopmentPlan?.nextCheckinTopics ?? [
+              exposedDevelopmentPlan?.nextCheckinTopics ?? [
                 '최근 강점과 현재 목표 실행 방식을 어떻게 연결할지',
                 'blind spot를 줄이기 위한 다음 행동 실험',
                 '다음 달 확인할 구체적 증거와 점검 방식',
               ],
             recommendedCompetencies:
-              resolvedDevelopmentPlan?.recommendedCompetencies ??
+              exposedDevelopmentPlan?.recommendedCompetencies ??
               roleGuideViewModel?.expectedCompetencies.slice(0, 4) ??
               [],
-            linkedEvidence: resolvedDevelopmentPlan?.linkedEvidence.length
-              ? resolvedDevelopmentPlan.linkedEvidence
+            linkedEvidence: exposedDevelopmentPlan?.linkedEvidence.length
+              ? exposedDevelopmentPlan.linkedEvidence
               : normalizeDevelopmentPlanLinkedEvidence(developmentPlanRecord?.linkedEvidence).length
                 ? normalizeDevelopmentPlanLinkedEvidence(developmentPlanRecord?.linkedEvidence)
                 : [
@@ -2902,7 +2992,7 @@ export async function getFeedback360PageData(
                       label: `${formatDate(checkin.scheduledDate)} 1:1`,
                       description: checkin.managerNotes || checkin.ownerNotes || '최근 점검 기록',
                     })),
-                    ...persistedTextHighlights.slice(0, 1).map((item) => ({
+                    ...exposedTextHighlights.slice(0, 1).map((item) => ({
                       type: 'REVIEW' as const,
                       label: '최근 리뷰 핵심 문장',
                       description: item,
@@ -2952,17 +3042,17 @@ export async function getFeedback360PageData(
                     : normalizeDevelopmentPlanStringArray(developmentPlanRecord?.recommendedCompetencies),
                 recentGoals,
                 recentCheckins,
-                feedbackSignals,
+                feedbackSignals: exposedFeedbackSignals,
                 aiPayload: {
                   employeeId: target.id,
                   employeeName: target.empName,
                   roleGuide: roleGuideViewModel,
                   recentGoals,
                   recentCheckins,
-                  feedbackSignals,
-                  categoryScores: persistedCategoryScores,
-                  strengths: resolvedStrengths,
-                  improvements: resolvedImprovements,
+                  feedbackSignals: exposedFeedbackSignals,
+                  categoryScores: withholdContent ? [] : persistedCategoryScores,
+                  strengths: withholdContent ? [] : resolvedStrengths,
+                  improvements: withholdContent ? [] : resolvedImprovements,
                 },
               }
             : undefined,
@@ -2994,7 +3084,8 @@ export async function getFeedback360PageData(
             },
           ],
           pdfHref: `/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/results-export?targetId=${encodeURIComponent(target.id)}&profile=${encodeURIComponent(recipientProfile)}`,
-          analysis: reportAnalysis,
+          // 익명 라운드의 평가자별 상세는 관리자에게만 보낸다(이름만이 아니라 목록을 통째로 뺀다).
+          analysis: hideReviewerDetails ? { ...reportAnalysis, reviewDetails: [] } : reportAnalysis,
           managerEffectiveness: managerEffectivenessResult,
         },
       }
