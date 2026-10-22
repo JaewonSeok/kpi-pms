@@ -19,13 +19,13 @@ import {
   UpwardReviewTemplateSchema,
 } from '@/lib/validations'
 import {
-  buildUpwardSuggestions,
   DEFAULT_LEADERSHIP_DIAGNOSIS_QUESTIONS,
   parseUpwardReviewSettings,
   serializeUpwardReviewSettings,
   validateUpwardAssignment,
 } from '@/lib/upward-review'
 import { getCollaboratorRoundIds, getFeedbackReviewAdminAccess } from '@/server/feedback-360-access'
+import { buildUpwardRoundPairSuggestions } from '@/server/upward-review-pairs'
 
 async function getActor() {
   const session = await getServerSession(authOptions)
@@ -1076,7 +1076,6 @@ export async function POST(request: Request) {
       }
       assertUpwardRoundAcceptsAssignments(round.status)
 
-      const settings = parseUpwardReviewSettings(round.documentSettings)
       const employees = await prisma.employee.findMany({
         where: {
           department: { orgId: actor.employee.department.orgId },
@@ -1086,37 +1085,19 @@ export async function POST(request: Request) {
           id: true,
           empName: true,
           role: true,
-          position: true,
-          deptId: true,
           jobTitle: true,
-          teamName: true,
+          status: true,
+          deptId: true,
           teamLeaderId: true,
-          sectionChiefId: true,
-          divisionHeadId: true,
-          department: { select: { deptName: true } },
         },
       })
 
-      const suggestions = buildUpwardSuggestions({
-        employees: employees.map((item) => ({
-          id: item.id,
-          empName: item.empName,
-          role: item.role,
-          position: item.position,
-          deptId: item.deptId,
-          deptName: item.department.deptName,
-          jobTitle: item.jobTitle,
-          teamName: item.teamName,
-          teamLeaderId: item.teamLeaderId,
-          sectionChiefId: item.sectionChiefId,
-          divisionHeadId: item.divisionHeadId,
-        })),
-        targetTypes: settings.targetTypes,
+      // 짝은 업적평가 체인의 바로 위 평가자로 정한다. 이미 있는 짝 · 수동 짝은 건드리지 않는다.
+      const { suggestions, unpaired, belowMinRaters } = await buildUpwardRoundPairSuggestions({
+        orgId: actor.employee.department.orgId,
+        round,
+        employees,
         evaluateeId: data.evaluateeId,
-        existingPairs: round.feedbacks.map((feedback) => ({
-          evaluatorId: feedback.giverId,
-          evaluateeId: feedback.receiverId,
-        })),
       })
 
       let createdCount = 0
@@ -1148,6 +1129,8 @@ export async function POST(request: Request) {
 
       return successResponse({
         createdCount,
+        unpaired,
+        belowMinRaters,
         message:
           createdCount > 0
             ? `${createdCount}건의 추천 매핑을 추가했습니다.`

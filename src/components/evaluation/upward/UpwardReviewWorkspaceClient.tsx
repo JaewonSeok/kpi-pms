@@ -2545,14 +2545,31 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                           </div>
                           <div className="mt-1 text-xs font-bold text-blue-700">{getLeadershipRelationshipLabel(suggestion.relationship)}</div>
                           <div className="mt-1 leading-6">{suggestion.reason}</div>
+                          {suggestion.belowMinRaters ? (
+                            <div data-below-min-raters={suggestion.evaluateeId} className="mt-1 text-xs font-bold text-amber-700">
+                              평가자 수가 최소 응답 인원보다 적습니다
+                            </div>
+                          ) : null}
                         </div>
                       ))
                     ) : (
                       <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm font-semibold text-slate-500">
-                        추천할 매핑이 없습니다. 이미 매핑이 추가되었거나 조직도상 팀장/PM/실장/본부장 연결 정보가 비어 있을 수 있습니다.
+                        추천할 매핑이 없습니다. 이미 매핑이 추가되었거나 업적평가 배정에 바로 위 평가자가 정해지지 않았을 수 있습니다.
                       </div>
                     )}
                   </div>
+                  {adminData.unpairedEvaluators?.length ? (
+                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                      <div className="text-sm font-extrabold text-amber-900">짝 없음 {adminData.unpairedEvaluators.length}명</div>
+                      <ul className="mt-2 max-h-[200px] space-y-1 overflow-y-auto text-xs font-semibold text-amber-900">
+                        {adminData.unpairedEvaluators.map((item) => (
+                          <li key={item.evaluatorId} data-unpaired-evaluator={item.evaluatorId}>
+                            {item.evaluatorName} · {item.reasonLabel}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">

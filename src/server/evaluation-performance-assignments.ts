@@ -762,6 +762,74 @@ async function buildDefaultAssignmentContext(db: AssignmentDbClient) {
   return { rows, employees, departments }
 }
 
+export type TargetStageEvaluator = {
+  stage: AssignableEvalStage
+  evaluatorId: string
+  // 배정 행의 평가자 상태. 기본 배정은 ACTIVE 직원만으로 계산하므로 ACTIVE 다.
+  evaluatorStatus: string
+}
+
+// 여러 대상자의 단계별 평가자를 한 번에 구한다. loadRuntimeStageAssignments 와 같은 규칙이다:
+// 배정 행이 하나라도 있는 대상은 그 행만 쓰고(행 없는 단계는 평가자 없음), 행이 하나도 없는 대상만 기본 배정을 쓴다.
+// 기본 배정(buildDefaultAssignmentRecords)은 호출당 한 번만 계산한다.
+// 비활성 평가자의 행은 그대로 돌려준다. 그 단계를 어떻게 다룰지는 호출하는 쪽이 정한다.
+export async function loadStageEvaluatorsForTargets(params: {
+  db?: AssignmentDbClient
+  evalCycleId: string
+  targetIds: string[]
+}) {
+  const db = params.db ?? prisma
+  const result = new Map<string, { source: 'ASSIGNMENT' | 'DEFAULT'; stages: TargetStageEvaluator[] }>()
+  if (!params.targetIds.length) return result
+
+  const stageOrder = (stage: EvalStage) => PERFORMANCE_ASSIGNABLE_STAGES.indexOf(stage)
+  const rows = await db.evaluationAssignment.findMany({
+    where: {
+      evalCycleId: params.evalCycleId,
+      targetId: { in: params.targetIds },
+      evalStage: { in: PERFORMANCE_ASSIGNABLE_STAGES },
+    },
+    select: {
+      targetId: true,
+      evalStage: true,
+      evaluatorId: true,
+      evaluator: { select: { status: true } },
+    },
+  })
+  for (const row of rows) {
+    const current = result.get(row.targetId) ?? { source: 'ASSIGNMENT' as const, stages: [] }
+    current.stages.push({
+      stage: row.evalStage as AssignableEvalStage,
+      evaluatorId: row.evaluatorId,
+      evaluatorStatus: row.evaluator?.status ?? 'INACTIVE',
+    })
+    result.set(row.targetId, current)
+  }
+
+  const targetsWithoutRows = params.targetIds.filter((targetId) => !result.has(targetId))
+  if (targetsWithoutRows.length) {
+    const missing = new Set(targetsWithoutRows)
+    for (const record of await buildDefaultAssignmentRecords(db)) {
+      if (!missing.has(record.targetId) || !record.evaluatorId) continue
+      const current = result.get(record.targetId) ?? { source: 'DEFAULT' as const, stages: [] }
+      current.stages.push({
+        stage: record.evalStage as AssignableEvalStage,
+        evaluatorId: record.evaluatorId,
+        evaluatorStatus: 'ACTIVE',
+      })
+      result.set(record.targetId, current)
+    }
+    for (const targetId of targetsWithoutRows) {
+      if (!result.has(targetId)) result.set(targetId, { source: 'DEFAULT', stages: [] })
+    }
+  }
+
+  for (const entry of result.values()) {
+    entry.stages.sort((left, right) => stageOrder(left.stage) - stageOrder(right.stage))
+  }
+  return result
+}
+
 function ensureAssignableStage(stage: EvalStage) {
   if (!PERFORMANCE_ASSIGNABLE_STAGES.includes(stage)) {
     throw new AppError(400, 'INVALID_EVALUATION_STAGE', '배정 관리에서는 상위 평가 단계만 변경할 수 있습니다.')

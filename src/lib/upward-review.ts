@@ -5,6 +5,7 @@ import type {
   RaterRelationship,
   SystemRole,
 } from '@prisma/client'
+import { resolveEvaluationRole, type EvaluationRole } from '@/lib/evaluation-leader-role'
 
 export const UPWARD_TARGET_TYPE_VALUES = [
   'TEAM_LEADER',
@@ -482,6 +483,121 @@ export function buildUpwardSuggestions(params: {
   }
 
   return suggestions
+}
+
+// 상향평가 짝 규칙: 각자 업적평가 체인의 바로 위 평가자를 평가한다.
+// 체인 순서는 getEvaluationStageChain 과 같다(SELF 다음 FIRST → SECOND → FINAL, 평가자가 없는 단계는 체인에 없다).
+// CEO_ADJUST 는 FINAL 이 있어야 체인에 붙으므로 '바로 위'가 될 수 없다.
+const UPWARD_CHAIN_STAGES = ['FIRST', 'SECOND', 'FINAL'] as const
+const UPWARD_CHAIN_STAGE_LABELS: Record<(typeof UPWARD_CHAIN_STAGES)[number], string> = {
+  FIRST: '1차',
+  SECOND: '2차',
+  FINAL: '최종',
+}
+
+export type UpwardChainStageEvaluator = { stage: string; evaluatorId: string; evaluatorStatus: string }
+
+export type UpwardUnpairedReason =
+  | 'NO_UPPER_STAGE'
+  | 'EVALUATOR_INACTIVE'
+  | 'EVALUATOR_NOT_FOUND'
+  | 'EVALUATOR_IS_CEO'
+  | 'TARGET_TYPE_EXCLUDED'
+
+export type UpwardChainSuggestion = UpwardSuggestion & {
+  stage: (typeof UPWARD_CHAIN_STAGES)[number]
+  belowMinRaters: boolean
+}
+
+// 리더 유형은 평가 역할로 정한다. ROLE_ADMIN 리더도 jobTitle 로 구한 역할의 유형이 된다.
+export function getUpwardTargetTypeForEvaluationRole(role: EvaluationRole): UpwardTargetType | null {
+  if (role === 'ROLE_TEAM_LEADER') return 'TEAM_LEADER'
+  if (role === 'ROLE_SECTION_CHIEF') return 'SECTION_CHIEF'
+  if (role === 'ROLE_DIV_HEAD') return 'DIVISION_HEAD'
+  return null
+}
+
+export function buildUpwardChainSuggestions(params: {
+  // 평가자 후보: 라운드 사이클의 업적평가 대상(selectEvaluationTargets)
+  candidates: Array<{ id: string; empName: string }>
+  // 후보별 업적평가 단계 평가자(배정 행 우선, 없으면 기본 배정)
+  stageEvaluatorsByCandidate: Map<string, UpwardChainStageEvaluator[]>
+  // 사이클 조직의 재직자. 짝의 대상(리더)은 여기서 찾는다.
+  employeesById: Map<string, { id: string; empName: string; role: EvaluationRole; jobTitle?: string | null }>
+  targetTypes: UpwardTargetType[]
+  minRaters: number
+  evaluateeId?: string | null
+  existingPairs?: Array<{ evaluatorId: string; evaluateeId: string }>
+}) {
+  const existingPairs = params.existingPairs ?? []
+  const existingPairKeys = new Set(existingPairs.map((item) => `${item.evaluatorId}:${item.evaluateeId}`))
+  const suggestions: UpwardChainSuggestion[] = []
+  const unpaired: Array<{ evaluatorId: string; evaluatorName: string; reason: UpwardUnpairedReason; reasonLabel: string }> = []
+
+  for (const candidate of params.candidates) {
+    const stages = params.stageEvaluatorsByCandidate.get(candidate.id) ?? []
+    const upper = UPWARD_CHAIN_STAGES.map((stage) => stages.find((item) => item.stage === stage)).find(Boolean)
+    const markUnpaired = (reason: UpwardUnpairedReason, reasonLabel: string) => {
+      if (!params.evaluateeId) unpaired.push({ evaluatorId: candidate.id, evaluatorName: candidate.empName, reason, reasonLabel })
+    }
+
+    if (!upper) {
+      markUnpaired('NO_UPPER_STAGE', '업적평가 체인에 상위 평가자가 정해지지 않았습니다.')
+      continue
+    }
+    const stage = upper.stage as (typeof UPWARD_CHAIN_STAGES)[number]
+    const stageLabel = UPWARD_CHAIN_STAGE_LABELS[stage]
+    // 바로 위 단계의 평가자가 없거나 비활성이면 다음 단계로 넘기지 않는다.
+    if (upper.evaluatorStatus !== 'ACTIVE') {
+      markUnpaired('EVALUATOR_INACTIVE', `업적평가 ${stageLabel} 평가자가 비활성입니다.`)
+      continue
+    }
+    const evaluatee = params.employeesById.get(upper.evaluatorId)
+    if (!evaluatee) {
+      markUnpaired('EVALUATOR_NOT_FOUND', `업적평가 ${stageLabel} 평가자를 이 조직의 재직자에서 찾을 수 없습니다.`)
+      continue
+    }
+    if (params.evaluateeId && evaluatee.id !== params.evaluateeId) continue
+
+    const evaluationRole = resolveEvaluationRole(evaluatee)
+    if (evaluationRole === 'ROLE_CEO') {
+      markUnpaired('EVALUATOR_IS_CEO', '바로 위 평가자가 대표라 짝을 만들지 않습니다.')
+      continue
+    }
+    const targetType = getUpwardTargetTypeForEvaluationRole(evaluationRole)
+    if (!targetType || !params.targetTypes.includes(targetType)) {
+      markUnpaired('TARGET_TYPE_EXCLUDED', `바로 위 평가자(${evaluatee.empName})가 이 진단 기간의 대상 유형이 아닙니다.`)
+      continue
+    }
+    if (existingPairKeys.has(`${candidate.id}:${evaluatee.id}`)) continue
+
+    suggestions.push({
+      evaluatorId: candidate.id,
+      evaluateeId: evaluatee.id,
+      relationship: 'SUBORDINATE',
+      reason: `${candidate.empName}의 업적평가 ${stageLabel} 평가자`,
+      stage,
+      belowMinRaters: false,
+    })
+  }
+
+  // 대상(리더)별 평가자 수 = 이미 있는 짝 + 이번 추천. minRaters 미만이면 표시만 한다(짝은 만든다).
+  const raterIdsByEvaluatee = new Map<string, Set<string>>()
+  for (const pair of [...existingPairs, ...suggestions]) {
+    raterIdsByEvaluatee.set(pair.evaluateeId, (raterIdsByEvaluatee.get(pair.evaluateeId) ?? new Set()).add(pair.evaluatorId))
+  }
+  const belowMinRaters = [...new Set(suggestions.map((item) => item.evaluateeId))]
+    .map((evaluateeId) => ({
+      evaluateeId,
+      evaluateeName: params.employeesById.get(evaluateeId)?.empName ?? evaluateeId,
+      raterCount: raterIdsByEvaluatee.get(evaluateeId)?.size ?? 0,
+      minRaters: params.minRaters,
+    }))
+    .filter((item) => item.raterCount < params.minRaters)
+  const belowIds = new Set(belowMinRaters.map((item) => item.evaluateeId))
+  for (const suggestion of suggestions) suggestion.belowMinRaters = belowIds.has(suggestion.evaluateeId)
+
+  return { suggestions, unpaired, belowMinRaters }
 }
 
 export type UpwardQuestionSummary = {
