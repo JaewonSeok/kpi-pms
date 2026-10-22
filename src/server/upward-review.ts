@@ -14,6 +14,7 @@ import { formatDate } from '@/lib/utils'
 import {
   buildUpwardSuggestions,
   canViewUpwardResults,
+  isUpwardResultViewer,
   getLeadershipResultViewerIds,
   getPrimaryLeaderId,
   getUpwardRoundResponseGate,
@@ -315,18 +316,8 @@ function canAccessUpwardResultShell(params: {
     return true
   }
 
-  if (params.actorId === params.targetId) {
-    return true
-  }
-
-  if (params.targetViewerIds?.includes(params.actorId)) {
-    return true
-  }
-
-  return (
-    params.settings.resultViewerMode === 'TARGET_AND_PRIMARY_MANAGER' &&
-    params.targetPrimaryLeaderId === params.actorId
-  )
+  // 결과 열람과 같은 판정(열람 모드 먼저)을 쓴다.
+  return isUpwardResultViewer(params)
 }
 
 function formatDateTime(value: Date | string | null | undefined) {

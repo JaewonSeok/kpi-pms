@@ -1,5 +1,7 @@
+import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { isFeedback360RoundEnded } from '@/lib/feedback-360-result-exposure'
 import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import {
@@ -819,10 +821,37 @@ export async function POST(request: Request) {
       const nextStatus =
         data.action === 'START' ? 'IN_PROGRESS' : data.action === 'CLOSE' ? 'COMPLETED' : 'IN_PROGRESS'
 
+      // (다시) 시작: 취소된 라운드와 짝이 0건인 라운드는 거절한다. 시작하면 결과 공개 표시를 지운다(다른 설정은 유지).
+      const currentSettings =
+        round.documentSettings && typeof round.documentSettings === 'object' && !Array.isArray(round.documentSettings)
+          ? (round.documentSettings as Prisma.JsonObject)
+          : {}
+      if (nextStatus === 'IN_PROGRESS') {
+        if (round.status === 'CANCELLED') {
+          throw new AppError(400, 'ROUND_CANCELLED', '취소된 리더십 진단 기간은 다시 시작할 수 없습니다.')
+        }
+        const assignmentCount = await prisma.multiFeedback.count({ where: { roundId: round.id } })
+        if (assignmentCount === 0) {
+          throw new AppError(400, 'NO_ASSIGNMENTS', '평가자-진단 대상자 매핑이 없어 시작할 수 없습니다.')
+        }
+      }
+      const clearsRelease =
+        nextStatus === 'IN_PROGRESS' &&
+        ('resultReleasedAt' in currentSettings || 'resultReleasedById' in currentSettings)
+
       await prisma.multiFeedbackRound.update({
         where: { id: round.id },
         data: {
           status: nextStatus,
+          ...(clearsRelease
+            ? {
+                documentSettings: Object.fromEntries(
+                  Object.entries(currentSettings).filter(
+                    ([key]) => key !== 'resultReleasedAt' && key !== 'resultReleasedById'
+                  )
+                ) as Prisma.JsonObject,
+              }
+            : {}),
         },
       })
 
@@ -866,6 +895,11 @@ export async function POST(request: Request) {
 
       if (!round) {
         throw new AppError(404, 'ROUND_NOT_FOUND', '리더십 진단 기간을 찾을 수 없습니다.')
+      }
+
+      // 결과 공개는 마감(COMPLETED · CLOSED)된 진단 기간에서만 된다. 공개 해제는 상태와 상관없이 된다.
+      if (data.released && !isFeedback360RoundEnded(round.status)) {
+        throw new AppError(400, 'ROUND_NOT_CLOSED', '마감된 리더십 진단 기간만 결과를 공개할 수 있습니다.')
       }
 
       const settings = parseUpwardReviewSettings(round.documentSettings)
