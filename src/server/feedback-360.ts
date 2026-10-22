@@ -78,6 +78,14 @@ import {
   shouldWithholdFeedback360Content,
 } from '@/lib/feedback-360-result-exposure'
 import {
+  buildFeedback360TargetProgress,
+  isFeedback360RoundTarget,
+  resolveFeedback360RoundActions,
+  selectFeedback360BulkPublishTargets,
+  type Feedback360RoundActions,
+  type Feedback360TargetProgressRow,
+} from '@/lib/feedback-360-round-operations'
+import {
   calculateDevelopmentPlanProgress,
   normalizeDevelopmentPlanActionItems,
   normalizeDevelopmentPlanLinkedEvidence,
@@ -404,9 +412,23 @@ export type Feedback360PageData = {
       responseRate: number
       pendingCount: number
       submittedCount: number
+      // 대상별 판정: 응답을 받는 대상 모두가 SELF 를 뺀 제출 수 ≥ minRaters 일 때만 참
       thresholdMet: boolean
+      thresholdMetTargetCount: number
+      targetCount: number
       qualityRiskCount: number
     }>
+    // 선택한 360(FULL_360, 온보딩 제외) 라운드의 운영 버튼 상태와 대상별 현황
+    roundOperations?: {
+      roundId: string
+      roundName: string
+      minRaters: number
+      actions: Feedback360RoundActions
+      progress: {
+        rows: Feedback360TargetProgressRow[]
+        unnominated: Array<{ id: string; name: string; department: string }>
+      }
+    }
     timeline: Array<{
       title: string
       description: string
@@ -939,6 +961,153 @@ export function buildGroupedResponses(params: {
   }
 
   return [...questionMap.values()]
+}
+
+type Feedback360RoundHealthSource = {
+  id: string
+  roundName: string
+  status: string
+  minRaters: number
+  feedbacks: Array<{
+    receiverId: string
+    relationship: string
+    status: string
+    responses: Array<{ ratingValue: number | null; textValue: string | null }>
+  }>
+}
+
+// 관리 화면의 라운드 상태 요약. 취소 라운드는 판정 · 경고에서 뺀다.
+export function buildFeedback360RoundHealth(rounds: Feedback360RoundHealthSource[]) {
+  return rounds
+    .filter((round) => round.status !== 'CANCELLED')
+    .map((round) => {
+      const roundSubmitted = round.feedbacks.filter((feedback) => feedback.status === 'SUBMITTED')
+      const qualityRiskCount = roundSubmitted.filter((feedback) => {
+        const ratingValues = feedback.responses
+          .map((response) => response.ratingValue)
+          .filter((value): value is number => typeof value === 'number')
+        const textResponses = feedback.responses
+          .map((response) => response.textValue)
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+
+        const identicalScores = ratingValues.length >= 3 && new Set(ratingValues).size === 1
+        const weakText = textResponses.length > 0 && textResponses.every((text) => text.trim().length < 12)
+        return identicalScores || weakText
+      }).length
+
+      const submittedCount = roundSubmitted.length
+      const totalCount = round.feedbacks.length
+      // 익명 기준은 대상별로 본다(SELF 제외). 라운드 합계로 보지 않는다.
+      const raterCountByTarget = new Map<string, number>()
+      for (const feedback of round.feedbacks) {
+        const current = raterCountByTarget.get(feedback.receiverId) ?? 0
+        const counts = feedback.status === 'SUBMITTED' && feedback.relationship !== 'SELF'
+        raterCountByTarget.set(feedback.receiverId, current + (counts ? 1 : 0))
+      }
+      const targetCount = raterCountByTarget.size
+      const thresholdMetTargetCount = [...raterCountByTarget.values()].filter(
+        (count) => count >= round.minRaters
+      ).length
+
+      return {
+        roundId: round.id,
+        roundName: round.roundName,
+        responseRate: toResponseRate(submittedCount, totalCount),
+        pendingCount: totalCount - submittedCount,
+        submittedCount,
+        thresholdMet: targetCount > 0 && thresholdMetTargetCount === targetCount,
+        thresholdMetTargetCount,
+        targetCount,
+        qualityRiskCount,
+      }
+    })
+}
+
+export function buildFeedback360RoundHealthAlerts(
+  roundHealth: Array<{ roundName: string; responseRate: number; qualityRiskCount: number }>
+) {
+  return roundHealth.flatMap((item) => {
+    const alerts: string[] = []
+    if (item.responseRate < 60) {
+      alerts.push(`${item.roundName}의 응답률이 낮아 reminder cadence 조정이 필요합니다.`)
+    }
+    if (item.qualityRiskCount > 0) {
+      alerts.push(`${item.roundName}에서 careless review로 보이는 응답 ${item.qualityRiskCount}건이 감지되었습니다.`)
+    }
+    return alerts
+  })
+}
+
+// 선택한 360 라운드의 운영 버튼 상태 · 대상별 현황 · 미지명(360 대상인데 지명이 없는 사람).
+async function buildFeedback360RoundOperations(params: {
+  round: {
+    id: string
+    roundName: string
+    roundType: string
+    status: string
+    minRaters: number
+    documentSettings: unknown
+    onboardingReviewGeneration: { id: string } | null
+    nominations: Array<{ targetId: string; status: string }>
+  }
+  orgId: string
+  canManageAllRounds: boolean
+  canManageRound: boolean
+}) {
+  const [orgDepartments, employees] = await Promise.all([
+    prisma.department.findMany({ where: { orgId: params.orgId }, select: { id: true } }),
+    prisma.employee.findMany({
+      where: { department: { orgId: params.orgId } },
+      select: {
+        id: true,
+        empName: true,
+        status: true,
+        deptId: true,
+        role: true,
+        jobTitle: true,
+        department: { select: { deptName: true } },
+      },
+      orderBy: [{ empName: 'asc' }],
+    }),
+  ])
+  const scope = { orgDepartmentIds: new Set(orgDepartments.map((department) => department.id)) }
+  const nameById = new Map(employees.map((employee) => [employee.id, employee]))
+  const targets = employees
+    .filter((employee) => isFeedback360RoundTarget(employee, scope))
+    .map((employee) => ({ id: employee.id, name: employee.empName, department: employee.department.deptName }))
+  const progress = buildFeedback360TargetProgress({
+    minRaters: params.round.minRaters,
+    nominations: params.round.nominations,
+    targets,
+  })
+  // 지명은 있지만 360 대상 목록에 없는 사람(이전에 만든 지명 등)도 이름으로 보인다.
+  const rows = progress.rows.map((row) => {
+    const employee = nameById.get(row.targetId)
+    return row.name === row.targetId && employee
+      ? { ...row, name: employee.empName, department: employee.department.deptName }
+      : row
+  })
+
+  return {
+    roundId: params.round.id,
+    roundName: params.round.roundName,
+    minRaters: params.round.minRaters,
+    actions: resolveFeedback360RoundActions({
+      round: {
+        roundType: params.round.roundType,
+        status: params.round.status,
+        isOnboarding: Boolean(params.round.onboardingReviewGeneration),
+        released: Boolean(readFeedback360ResultReleasedAt(params.round.documentSettings)),
+      },
+      canManageAllRounds: params.canManageAllRounds,
+      canManageRound: params.canManageRound,
+      publishableTargetCount: selectFeedback360BulkPublishTargets({
+        minRaters: params.round.minRaters,
+        nominations: params.round.nominations,
+      }).publish.length,
+    }),
+    progress: { rows, unnominated: progress.unnominated },
+  }
 }
 
 function extractTagLabelsFromOverallComment(comment: string | null | undefined): string[] {
@@ -3092,34 +3261,21 @@ export async function getFeedback360PageData(
     }
 
     if (params.mode === 'admin') {
-      const roundHealth = scopedRounds.map((round) => {
-        const roundSubmitted = round.feedbacks.filter((feedback) => feedback.status === 'SUBMITTED')
-        const qualityRiskCount = roundSubmitted.filter((feedback) => {
-          const ratingValues = feedback.responses
-            .map((response) => response.ratingValue)
-            .filter((value): value is number => typeof value === 'number')
-          const textResponses = feedback.responses
-            .map((response) => response.textValue)
-            .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      const roundHealth = buildFeedback360RoundHealth(scopedRounds)
 
-          const identicalScores = ratingValues.length >= 3 && new Set(ratingValues).size === 1
-          const weakText = textResponses.length > 0 && textResponses.every((text) => text.trim().length < 12)
-          return identicalScores || weakText
-        }).length
-
-        const submittedCount = roundSubmitted.length
-        const totalCount = round.feedbacks.length
-
-        return {
-          roundId: round.id,
-          roundName: round.roundName,
-          responseRate: toResponseRate(submittedCount, totalCount),
-          pendingCount: totalCount - submittedCount,
-          submittedCount,
-          thresholdMet: submittedCount >= round.minRaters,
-          qualityRiskCount,
-        }
-      })
+      const roundOperations =
+        selectedRound &&
+        isFeedback360ResultRuleRound({
+          roundType: selectedRound.roundType,
+          isOnboarding: Boolean(selectedRound.onboardingReviewGeneration),
+        })
+          ? await buildFeedback360RoundOperations({
+              round: selectedRound,
+              orgId: selectedCycle.orgId,
+              canManageAllRounds: reviewAdminAccess.canManageAllRounds,
+              canManageRound: canManageSelectedRound,
+            })
+          : undefined
 
       const nominationRecords = await prisma.feedbackNomination.findMany({
         where: {
@@ -3435,22 +3591,14 @@ export async function getFeedback360PageData(
         ...baseData,
         admin: {
           roundHealth,
+          roundOperations,
           timeline: scopedRounds.slice(0, 6).map((round) => ({
               title: round.roundName,
               description: `${round.status} · 응답률 ${toResponseRate(round.feedbacks.filter((feedback) => feedback.status === 'SUBMITTED').length, round.feedbacks.length)}%`,
               at: formatDate(round.endDate),
             })),
           alerts: [
-            ...roundHealth.flatMap((item) => {
-            const alerts: string[] = []
-            if (item.responseRate < 60) {
-              alerts.push(`${item.roundName}의 응답률이 낮아 reminder cadence 조정이 필요합니다.`)
-            }
-            if (item.qualityRiskCount > 0) {
-              alerts.push(`${item.roundName}에서 careless review로 보이는 응답 ${item.qualityRiskCount}건이 감지되었습니다.`)
-               }
-              return alerts
-            }),
+            ...buildFeedback360RoundHealthAlerts(roundHealth),
             ...(onboardingSnapshotResult.alert ? [onboardingSnapshotResult.alert] : []),
           ],
           folders: folders.map((folder) => ({
