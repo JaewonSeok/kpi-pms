@@ -141,6 +141,36 @@ export async function POST(
       return successResponse({ roundId, status: round.status, resultReleasedAt: releasedAt, message: '결과를 공개했습니다.' })
     }
 
+    // 공개 취소: 상태는 그대로 두고 공개 표시만 지운다(다른 설정은 유지). 다시 공개할 때까지 본인 · 리더는 결과를 못 본다.
+    if (action === 'UNRELEASE_RESULTS') {
+      if (!('resultReleasedAt' in currentSettings)) {
+        throw new AppError(400, 'RESULT_NOT_RELEASED', '공개된 결과가 없습니다.')
+      }
+
+      const unreleasedSettings = Object.fromEntries(
+        Object.entries(currentSettings).filter(([key]) => key !== 'resultReleasedAt' && key !== 'resultReleasedById')
+      ) as Prisma.JsonObject
+      await prisma.multiFeedbackRound.update({
+        where: { id: roundId },
+        data: { documentSettings: unreleasedSettings },
+        select: { id: true },
+      })
+
+      const unreleaseClientInfo = getClientInfo(request)
+      await createAuditLog({
+        ...resolveAuditActor(session),
+        action: 'FEEDBACK_ROUND_RESULTS_UNRELEASED',
+        entityType: 'MultiFeedbackRound',
+        entityId: roundId,
+        oldValue: { resultReleasedAt: currentSettings.resultReleasedAt ?? null },
+        newValue: { resultReleasedAt: null, roundName: round.roundName },
+        ipAddress: unreleaseClientInfo.ipAddress,
+        userAgent: unreleaseClientInfo.userAgent,
+      })
+
+      return successResponse({ roundId, status: round.status, resultReleasedAt: null, message: '결과 공개를 취소했습니다.' })
+    }
+
     let nextStatus: 'COMPLETED' | 'CANCELLED' | 'IN_PROGRESS'
 
     if (action === 'CLOSE') {

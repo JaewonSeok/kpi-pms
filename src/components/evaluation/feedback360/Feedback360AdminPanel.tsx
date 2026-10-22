@@ -41,6 +41,10 @@ import {
 } from '@/lib/feedback-rating-guide'
 import { reviewEmailHtmlToText } from '@/lib/review-email-editor'
 import { MultiRaterTimeline } from './MultiRaterTimeline'
+import {
+  Feedback360RoundOperationsPanel,
+  type Feedback360RoundOperationAction,
+} from './Feedback360RoundOperationsPanel'
 import { ResponseRateCard } from './ResponseRateCard'
 import { RichTextEmailEditor } from './RichTextEmailEditor'
 import { Feedback360MailDiagnosticsPanel } from './ppt/Feedback360MailDiagnosticsPanel'
@@ -1333,6 +1337,45 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   async function refreshWithMessage(message: string) {
     setBanner({ tone: 'success', message })
     router.refresh()
+  }
+
+  // 360 라운드 운영: 일괄 발행 · 마감 · 결과 공개 · 공개 취소. 확인 창은 패널이 띄운다.
+  async function handleRoundOperation(roundId: string, action: Feedback360RoundOperationAction) {
+    setBusy(true)
+    try {
+      const request =
+        action === 'bulkPublish'
+          ? { url: `/api/feedback/rounds/${encodeURIComponent(roundId)}/bulk-publish`, body: {} }
+          : {
+              url: `/api/feedback/rounds/${encodeURIComponent(roundId)}/status`,
+              body: {
+                action: action === 'close' ? 'CLOSE' : action === 'release' ? 'RELEASE_RESULTS' : 'UNRELEASE_RESULTS',
+              },
+            }
+      const response = await fetch(request.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request.body),
+      })
+      const json = await response.json()
+      if (!json.success) {
+        throw new Error(json.error?.message || '라운드 운영 작업을 처리하지 못했습니다.')
+      }
+      const skipped = Array.isArray(json.data?.skippedBelowMinRaters) ? json.data.skippedBelowMinRaters.length : 0
+      const notApproved = Array.isArray(json.data?.notApprovedTargets) ? json.data.notApprovedTargets.length : 0
+      await refreshWithMessage(
+        action === 'bulkPublish'
+          ? `${json.data?.message ?? '일괄 발행을 마쳤습니다.'} 기준 미달로 건너뛴 대상 ${skipped}명, 미승인 대상 ${notApproved}명.`
+          : json.data?.message ?? '라운드 운영 작업을 처리했습니다.'
+      )
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '라운드 운영 작업을 처리하지 못했습니다.',
+      })
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function handleAssignFolder(roundId: string, folderId: string) {
@@ -2987,6 +3030,24 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
           <EmptyBlock message="현재 필터에 맞는 라운드가 없습니다. 폴더를 바꾸거나 새 폴더를 만들어 운영 분류를 다시 잡아 보세요." />
         )}
       </Panel>
+
+      {admin?.roundOperations ? (
+        <Panel
+          title={`라운드 운영 · ${admin.roundOperations.roundName}`}
+          description="일괄 발행 · 마감 · 결과 공개 · 공개 취소와 대상별 지명 현황을 확인합니다. 할 수 없는 작업은 사유와 함께 막혀 있습니다."
+        >
+          <Feedback360RoundOperationsPanel
+            roundId={admin.roundOperations.roundId}
+            selectedRoundId={selectedRoundId}
+            roundName={admin.roundOperations.roundName}
+            actions={admin.roundOperations.actions}
+            progress={admin.roundOperations.progress}
+            minRaters={admin.roundOperations.minRaters}
+            busy={busy}
+            onAction={(action) => void handleRoundOperation(admin.roundOperations!.roundId, action)}
+          />
+        </Panel>
+      ) : null}
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Panel

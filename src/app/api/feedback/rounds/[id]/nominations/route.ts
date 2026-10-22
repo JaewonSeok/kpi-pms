@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { isManagerEffectivenessTarget } from '@/lib/feedback-manager-effectiveness'
+import { FEEDBACK_360_LEADER_TARGET_MESSAGE, isFeedback360RoundTarget } from '@/lib/feedback-360-round-operations'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackNominationDraftSchema } from '@/lib/validations'
@@ -121,9 +122,12 @@ export async function POST(
       where: { id: roundId },
       select: {
         id: true,
+        roundType: true,
         status: true,
         maxRaters: true,
         selectionSettings: true,
+        onboardingReviewGeneration: { select: { id: true } },
+        evalCycle: { select: { orgId: true } },
       },
     })
 
@@ -141,6 +145,10 @@ export async function POST(
         id: true,
         empName: true,
         position: true,
+        status: true,
+        deptId: true,
+        role: true,
+        jobTitle: true,
         teamLeaderId: true,
         sectionChiefId: true,
         divisionHeadId: true,
@@ -149,6 +157,18 @@ export async function POST(
 
     if (!target) {
       throw new AppError(404, 'TARGET_NOT_FOUND', '대상자를 찾을 수 없습니다.')
+    }
+
+    // 360(FULL_360, 온보딩 제외)의 대상은 평가 대상 중 평가 역할이 팀원인 사람만이다. 리더 · 대표는 리더십 평가 대상이다.
+    if (round.roundType === 'FULL_360' && !round.onboardingReviewGeneration) {
+      const orgDepartments = await prisma.department.findMany({
+        where: { orgId: round.evalCycle.orgId },
+        select: { id: true },
+      })
+      const scope = { orgDepartmentIds: new Set(orgDepartments.map((department) => department.id)) }
+      if (!isFeedback360RoundTarget(target, scope)) {
+        throw new AppError(400, 'NOT_360_TARGET', FEEDBACK_360_LEADER_TARGET_MESSAGE)
+      }
     }
 
     if (!canManageFeedbackTarget(session.user.id, session.user.role, target)) {

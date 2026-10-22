@@ -58,6 +58,11 @@ export async function POST(
       throw new AppError(404, 'ROUND_NOT_FOUND', '360 리뷰 라운드를 찾을 수 없습니다.')
     }
 
+    // 취소 · 마감된 라운드에서는 지명 제출 · 승인 · 반려(발행 포함)를 받지 않는다.
+    if (['CANCELLED', 'COMPLETED', 'CLOSED'].includes(round.status)) {
+      throw new AppError(400, 'ROUND_ALREADY_CLOSED', '취소되거나 마감된 라운드에서는 평가자 매핑을 바꿀 수 없습니다.')
+    }
+
     const employee = await prisma.employee.findUnique({
       where: { id: session.user.id },
       include: { department: true },
