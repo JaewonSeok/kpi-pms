@@ -1203,9 +1203,9 @@ export const FeedbackNominationWorkflowSchema = z.object({
   note: z.string().max(500).optional(),
 })
 
-// 360 리뷰 라운드(FULL_360 · PEER · CROSS_DEPT) 종료 전이
+// 360 리뷰 라운드(FULL_360 · PEER · CROSS_DEPT) 종료 전이와 결과 공개(RELEASE_RESULTS: 마감된 라운드에서만)
 export const FeedbackRoundStatusSchema = z.object({
-  action: z.enum(['CLOSE', 'CANCEL', 'REOPEN']),
+  action: z.enum(['CLOSE', 'CANCEL', 'REOPEN', 'RELEASE_RESULTS']),
 })
 
 export const Feedback360ReportGenerateSchema = z.object({
