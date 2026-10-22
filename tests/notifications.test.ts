@@ -195,6 +195,8 @@ async function main() {
         recipient: { id: 'emp-1', empName: '테스트', gwsEmail: 'blocked@test.com' },
       }
       const stubDb = {
+        // 대표 조회는 성공해야 EMAIL 잡이 처리된다(실패하면 그 실행에서는 보류된다). 대표 없음.
+        employee: { findMany: async () => [] },
         notificationJob: {
           findMany: async () => [mockJob],
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -270,6 +272,8 @@ async function main() {
         notificationJob: { update: async () => { updateCallCount += 1; return {} } },
       }
       const stubDb = {
+        // 대표 조회는 성공해야 EMAIL 잡이 처리된다(실패하면 그 실행에서는 보류된다). 대표 없음.
+        employee: { findMany: async () => [] },
         notificationJob: { findMany: async () => [makeDigestJob('j-d1'), makeDigestJob('j-d2')] },
         $transaction: async (fn: (tx: typeof txStub) => Promise<void>) => fn(txStub),
       }

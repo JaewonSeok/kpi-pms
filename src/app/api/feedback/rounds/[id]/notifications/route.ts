@@ -144,8 +144,11 @@ export async function POST(request: Request, context: RouteContext) {
         body: normalizedBody.html,
       })
 
+      // 대표 메일 차단 · allowlist 에 막히면 보내지 않고 사유를 돌려준다.
       return successResponse({
-        message: '테스트 발송이 완료되었습니다.',
+        message: preview.sent
+          ? '테스트 발송이 완료되었습니다.'
+          : `테스트 발송을 보내지 않았습니다. (${preview.suppressReason})`,
         preview,
       })
     }

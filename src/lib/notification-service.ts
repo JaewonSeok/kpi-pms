@@ -675,15 +675,29 @@ export async function sendNotificationTemplateTest(
   }
 }
 
-export async function sendAdhocNotificationTest(params: {
-  recipientEmail: string
-  recipientName: string
-  subject: string
-  body: string
-}) {
+export async function sendAdhocNotificationTest(
+  params: {
+    recipientEmail: string
+    recipientName: string
+    subject: string
+    body: string
+  },
+  db: PrismaClient = prisma
+): Promise<{ sent: boolean; suppressReason: string | null }> {
   if (!isAllowedGoogleWorkspaceEmail(params.recipientEmail)) {
     throw new Error('테스트 발송 이메일은 사내 도메인만 허용됩니다.')
   }
+  // 템플릿 테스트 발송 · 큐 발송과 같은 가드: 대표 메일 차단 → allowlist. 막히면 보내지 않고 사유를 돌려준다.
+  const recipient = await db.employee.findFirst({
+    where: { gwsEmail: { equals: params.recipientEmail.trim(), mode: 'insensitive' } },
+    select: { id: true },
+  })
+  const suppressReason: string | null =
+    recipient && (await getCeoRecipientIds(db)).has(recipient.id)
+      ? 'CEO_EMAIL_SUPPRESSED'
+      : resolveAllowlistSuppressReason(params.recipientEmail)
+  if (suppressReason) return { sent: false, suppressReason }
+
   const renderedBody = renderTemplate(params.body, {
     employeeName: params.recipientName,
     link: '',
@@ -695,6 +709,7 @@ export async function sendAdhocNotificationTest(params: {
     text: content.text,
     html: content.html,
   })
+  return { sent: true, suppressReason: null }
 }
 
 function getDefaultChannels(preference: Awaited<ReturnType<typeof ensureNotificationPreference>>) {
@@ -1171,7 +1186,12 @@ export async function dispatchDueNotificationJobs(
   jobIds?: string[]
 ): Promise<DispatchSummary> {
   const jobs = await getProcessableJobs(db, jobIds)
-  const ceoIds = await getCeoRecipientIds(db).catch(() => new Set<string>())
+  // 대표 조회가 실패하면 빈 집합으로 넘어가지 않는다(대표에게 메일이 나갈 수 있다).
+  // 이 실행에서는 EMAIL 잡을 보내지 않고 대기로 남겨 다음 실행에서 다시 시도한다. IN_APP 은 그대로 보낸다.
+  const ceoIds = await getCeoRecipientIds(db).catch((error) => {
+    console.error('[notification-dispatch] CEO lookup failed; EMAIL jobs are held for the next run', error)
+    return null
+  })
   const summary: DispatchSummary = {
     processedCount: jobs.length,
     successCount: 0,
@@ -1195,11 +1215,12 @@ export async function dispatchDueNotificationJobs(
   }
 
   for (const job of immediateJobs) {
+    if (job.channel !== NotificationDeliveryChannel.IN_APP && !ceoIds) continue
     try {
       if (job.channel === NotificationDeliveryChannel.IN_APP) {
         await deliverInAppJob(db, job)
         summary.successCount += 1
-      } else {
+      } else if (ceoIds) {
         const outcome = await deliverEmailJob(db, job, ceoIds)
         if (outcome === 'SUPPRESSED') summary.suppressedCount += 1
         else summary.successCount += 1
@@ -1213,6 +1234,7 @@ export async function dispatchDueNotificationJobs(
   }
 
   for (const group of digestGroups.values()) {
+    if (!ceoIds) continue
     try {
       const result = await deliverDigestGroup(db, group, ceoIds)
       summary.successCount += result.success
