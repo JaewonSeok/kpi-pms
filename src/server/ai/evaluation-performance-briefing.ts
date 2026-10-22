@@ -3,7 +3,6 @@ import {
   AIRequestType,
   Prisma,
   type PrismaClient,
-  type QuestionType,
   type SystemRole,
 } from '@prisma/client'
 import { createAuditLog, type AuditActor } from '@/lib/audit'
@@ -26,6 +25,10 @@ import { recordOperationalEvent } from '@/lib/operations'
 import { prisma } from '@/lib/prisma'
 import { requestExecutivePerformanceBriefingFromOpenAI } from '@/server/ai/executive-performance-briefing-openai'
 import { getPreviousActiveEvaluationStage } from '@/server/evaluation-performance-assignments'
+import {
+  describeFeedback360EvidenceRound,
+  loadFeedback360EvaluationEvidence,
+} from '@/server/feedback-360-evaluation-evidence'
 import { getLatestEmployeeMidReviewSummary } from '@/server/mid-review'
 import { AppError, EVAL_STAGE_LABELS, POSITION_LABELS } from '@/lib/utils'
 
@@ -568,35 +571,15 @@ async function loadEvaluationPerformanceBriefingContext(
         ownerNotes: true,
       },
     }),
+    // 360 근거는 공개 · 익명 기준을 거친 집계만 쓴다(feedback-360-evaluation-evidence). 원문은 넣지 않는다.
     evaluation.evalStage === 'FIRST'
       ? Promise.resolve([])
-      : db.multiFeedbackRound.findMany({
-          where: {
-            endDate: { gte: oneYearAgo },
-            feedbacks: { some: { receiverId: evaluation.targetId } },
-          },
-          orderBy: { endDate: 'desc' },
-          take: 6,
-          include: {
-            feedbacks: {
-              where: {
-                receiverId: evaluation.targetId,
-                status: 'SUBMITTED',
-              },
-              include: {
-                responses: {
-                  include: {
-                    question: {
-                      select: {
-                        questionType: true,
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        }),
+      : loadFeedback360EvaluationEvidence({
+          db,
+          targetIds: [evaluation.targetId],
+          viewer: { id: params.actorId, role: params.actorRole },
+          endedSince: oneYearAgo,
+        }).then((evidence) => (evidence.get(evaluation.targetId) ?? []).slice(0, 6)),
     db.evaluation.findMany({
       where: {
         targetId: evaluation.targetId,
@@ -629,36 +612,15 @@ async function loadEvaluationPerformanceBriefingContext(
     evaluation,
     referenceEvaluation: referenceEvaluation ?? evaluation,
     checkins,
-    feedbackRounds: feedbackRounds.map((round) => {
-      const ratings = round.feedbacks.flatMap((feedback) =>
-        feedback.responses
-          .filter(
-            (response) =>
-              response.question.questionType === ('RATING_SCALE' as QuestionType) &&
-              typeof response.ratingValue === 'number'
-          )
-          .map((response) => response.ratingValue as number)
-      )
-
-      const averageRating = ratings.length
-        ? Math.round((ratings.reduce((sum, value) => sum + value, 0) / ratings.length) * 10) / 10
-        : null
-
-      const highlight =
-        round.feedbacks
-          .flatMap((feedback) => feedback.responses.map((response) => response.textValue ?? '').filter(Boolean))
-          .slice(0, 2)
-          .join(' / ') || null
-
-      return {
-        id: round.id,
-        roundName: round.roundName,
-        roundType: round.roundType,
-        averageRating,
-        submittedCount: round.feedbacks.length,
-        summary: highlight,
-      }
-    }),
+    feedbackRounds: feedbackRounds.map((round) => ({
+      id: round.id,
+      roundName: round.roundName,
+      roundType: round.roundType,
+      averageRating: round.averageRating,
+      submittedCount: round.raterCount,
+      // 집계 요약(응답 수 · 평균 · 2회 이상 쓰인 태그)만 담는다.
+      summary: describeFeedback360EvidenceRound(round),
+    })),
     previousEvaluations,
     midReviewData,
   }

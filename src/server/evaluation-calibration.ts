@@ -5,7 +5,6 @@ import type {
   AppealStatus,
   Position,
   Prisma,
-  RaterRelationship,
   SystemRole,
 } from '@prisma/client'
 import {
@@ -34,6 +33,7 @@ import { prisma } from '@/lib/prisma'
 import { AI_COMPETENCY_GATE_VISIBLE_STATUS_LABELS } from '@/lib/ai-competency-gate-config'
 import { loadAiCompetencySyncedResults } from '@/server/ai-competency'
 import { loadAiCompetencyGatePromotionStatuses } from '@/server/ai-competency-gate-promotion'
+import { loadFeedback360EvaluationEvidence, type Feedback360EvidenceRound } from '@/server/feedback-360-evaluation-evidence'
 import {
   parseCalibrationSessionConfig,
   type CalibrationSessionConfigValue,
@@ -535,11 +535,6 @@ type HistoricalEvaluationRecord = {
   }
 }
 
-type FeedbackSummaryRecord = {
-  receiverId: string
-  relationship: RaterRelationship
-  ratings: number[]
-}
 
 type CalibrationAppealRecord = {
   id: string
@@ -837,28 +832,12 @@ export async function getEvaluationCalibrationPageData(params: {
         },
         orderBy: [{ evalCycle: { evalYear: 'desc' } }, { updatedAt: 'desc' }],
       }),
-      prisma.multiFeedback.findMany({
-        where: {
-          receiverId: {
-            in: targetIds,
-          },
-          status: 'SUBMITTED',
-          relationship: {
-            in: ['SELF', 'SUPERVISOR', 'PEER', 'CROSS_TEAM_PEER'],
-          },
-          round: {
-            evalCycleId: selectedCycle.id,
-          },
-        },
-        select: {
-          receiverId: true,
-          relationship: true,
-          responses: {
-            select: {
-              ratingValue: true,
-            },
-          },
-        },
+      // 360 근거는 공개 · 익명 기준을 거친 집계만 쓴다(feedback-360-evaluation-evidence).
+      loadFeedback360EvaluationEvidence({
+        db: prisma,
+        targetIds,
+        viewer: { id: params.userId, role: params.role },
+        evalCycleId: selectedCycle.id,
       }),
       prisma.department.findMany({
         where: {
@@ -1428,64 +1407,27 @@ function buildHistoricalEvaluationMap(
   )
 }
 
-function buildFeedbackSummaryMap(records: Array<{
-  receiverId: string
-  relationship: RaterRelationship
-  responses: Array<{ ratingValue: number | null }>
-}>) {
-  const grouped = new Map<string, FeedbackSummaryRecord[]>()
-
-  for (const record of records) {
-    const ratings = record.responses
-      .map((response) => response.ratingValue)
-      .filter((value): value is number => typeof value === 'number')
-
-    if (!ratings.length) continue
-
-    const current = grouped.get(record.receiverId) ?? []
-    current.push({
-      receiverId: record.receiverId,
-      relationship: record.relationship,
-      ratings,
-    })
-    grouped.set(record.receiverId, current)
-  }
-
+// 360 근거는 공개 · 익명 기준을 넘은 라운드의 집계 평균만 쓴다(SELF 제외, 평가자별 점수 없음).
+// 본인 · 리더 평균과 분산은 한두 사람의 점수가 그대로 드러나므로 비운다. peerMean 은 라운드 평균들의 평균이다.
+function buildFeedbackSummaryMap(evidence: Map<string, Feedback360EvidenceRound[]>) {
   return new Map(
-    [...grouped.entries()].map(([targetId, summaries]) => {
-      const selfRatings = flattenFeedbackRatings(summaries, ['SELF'])
-      const managerRatings = flattenFeedbackRatings(summaries, ['SUPERVISOR'])
-      const peerRatings = flattenFeedbackRatings(summaries, ['PEER', 'CROSS_TEAM_PEER'])
+    [...evidence.entries()].map(([targetId, rounds]) => {
+      const roundAverages = rounds
+        .map((round) => round.averageRating)
+        .filter((value): value is number => typeof value === 'number')
 
       return [
         targetId,
         {
-          selfMean: selfRatings.length ? roundToSingle(average(selfRatings)) : undefined,
-          managerMean: managerRatings.length ? roundToSingle(average(managerRatings)) : undefined,
-          peerMean: peerRatings.length ? roundToSingle(average(peerRatings)) : undefined,
-          peerVariance: peerRatings.length > 1 ? roundToSingle(variance(peerRatings)) : undefined,
+          peerMean: roundAverages.length ? roundToSingle(average(roundAverages)) : undefined,
         } satisfies CalibrationCandidate['feedbackSummary'],
       ]
     })
   )
 }
 
-function flattenFeedbackRatings(
-  records: FeedbackSummaryRecord[],
-  relationships: RaterRelationship[]
-) {
-  return records
-    .filter((record) => relationships.includes(record.relationship))
-    .flatMap((record) => record.ratings)
-}
-
 function average(values: number[]) {
   return values.reduce((sum, value) => sum + value, 0) / values.length
-}
-
-function variance(values: number[]) {
-  const mean = average(values)
-  return values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length
 }
 
 function getCalibrationStagePriority(stage: string) {

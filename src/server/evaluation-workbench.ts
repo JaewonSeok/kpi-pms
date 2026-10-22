@@ -4,10 +4,8 @@ import type {
   EvalStage,
   EvalStatus,
   FeedbackRoundType,
-  FeedbackStatus,
   KpiStatus,
   Prisma,
-  QuestionType,
   SystemRole,
 } from '@prisma/client'
 import type { Session } from 'next-auth'
@@ -29,10 +27,7 @@ import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2
 import { resolveItemPolicyCategory } from '@/lib/evaluation-item-policy-category'
 import { resolveTargetAmount } from '@/lib/resolve-target-amount'
 import { getLatestEmployeeMidReviewSummary, type MidReviewSummaryViewModel } from '@/server/mid-review'
-import {
-  parseFeedback360TagSummaryFromComment,
-  getSelectedFeedback360ResponseTagLabels,
-} from '@/components/evaluation/feedback360/feedback360-response-tag-pool'
+import { loadFeedback360EvaluationEvidence, type Feedback360EvidenceRound } from '@/server/feedback-360-evaluation-evidence'
 
 export type EvaluationWorkbenchState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
@@ -318,22 +313,6 @@ type WorkbenchMonthlyEvidenceRecord = {
     kpiName: string
   }
 }
-type WorkbenchFeedbackRound = {
-  id: string
-  roundName: string
-  roundType: FeedbackRoundType
-  minRaters: number
-  feedbacks: Array<{
-    overallComment: string | null
-    responses: Array<{
-      question: {
-        questionType: QuestionType
-      }
-      ratingValue: number | null
-    }>
-  }>
-}
-
 type WorkbenchGoalContextLink = {
   id: string
   label: string
@@ -1375,31 +1354,18 @@ export async function getEvaluationWorkbenchPageData(
       }),
       loadWorkbenchSection({
         title: 'feedback rounds',
-        fallback: [] as WorkbenchFeedbackRound[],
+        fallback: [] as Feedback360EvidenceRound[],
         alert: '다면 피드백 일부를 불러오지 못해 현재 연결된 근거만 표시합니다.',
-        load: () =>
-          prisma.multiFeedbackRound.findMany({
-            where: {
+        // 360 근거는 공개 · 익명 기준을 거친 집계만 쓴다(feedback-360-evaluation-evidence).
+        load: async () =>
+          (
+            await loadFeedback360EvaluationEvidence({
+              db: prisma,
+              targetIds: [selectedEvaluation.target.id],
+              viewer: { id: sessionUser.id, role: sessionUser.role },
               evalCycleId: selectedEvaluation.evalCycleId,
-              feedbacks: { some: { receiverId: selectedEvaluation.target.id } },
-            },
-            include: {
-              feedbacks: {
-                where: {
-                  receiverId: selectedEvaluation.target.id,
-                  status: 'SUBMITTED' as FeedbackStatus,
-                },
-                include: {
-                  responses: {
-                    include: {
-                      question: true,
-                    },
-                  },
-                },
-              },
-            },
-            orderBy: { endDate: 'desc' },
-          }),
+            })
+          ).get(selectedEvaluation.target.id) ?? [],
       }),
       loadWorkbenchSection({
         title: 'mid-review summary',
@@ -1739,53 +1705,18 @@ export async function getEvaluationWorkbenchPageData(
             title: item.personalKpi.linkedOrgKpi!.kpiName,
             department: item.personalKpi.linkedOrgKpi!.department.deptName,
           })),
-        feedbackRounds: feedbackRounds.map((round) => {
-          const ratingValues = round.feedbacks.flatMap((feedback) =>
-            feedback.responses
-              .filter(
-                (response) =>
-                  response.question.questionType === ('RATING_SCALE' as QuestionType) &&
-                  typeof response.ratingValue === 'number'
-              )
-              .map((response) => response.ratingValue as number)
-          )
-
-          const averageRating = ratingValues.length
-            ? Math.round((ratingValues.reduce((sum, value) => sum + value, 0) / ratingValues.length) * 10) /
-              10
-            : undefined
-
-          const meetsMinRaters = round.feedbacks.length >= round.minRaters
-
-          const positiveCounts = new Map<string, number>()
-          const improvementCounts = new Map<string, number>()
-          for (const feedback of round.feedbacks) {
-            const { selectedTags } = parseFeedback360TagSummaryFromComment(feedback.overallComment)
-            const tagItems = getSelectedFeedback360ResponseTagLabels(selectedTags)
-            for (const tag of tagItems) {
-              const map = tag.tone === 'positive' ? positiveCounts : improvementCounts
-              map.set(tag.label, (map.get(tag.label) ?? 0) + 1)
-            }
-          }
-          const sortTagCounts = (counts: Map<string, number>) =>
-            [...counts.entries()]
-              .map(([label, count]) => ({ label, count }))
-              .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'ko'))
-
-          return {
-            id: round.id,
-            roundName: round.roundName,
-            roundType: round.roundType,
-            submittedCount: round.feedbacks.length,
-            averageRating,
-            summary: meetsMinRaters
-              ? `응답 ${round.feedbacks.length}건이 수집되어 결과를 참고할 수 있습니다.`
-              : `최소 ${round.minRaters}건 기준에 아직 도달하지 않았습니다.`,
-            meetsMinRaters,
-            positiveTags: sortTagCounts(positiveCounts),
-            improvementTags: sortTagCounts(improvementCounts),
-          }
-        }),
+        // 공개 · 익명 기준을 넘은 라운드의 집계만 온다. 응답 수는 SELF 를 뺀 기준 판정 인원이다.
+        feedbackRounds: feedbackRounds.map((round) => ({
+          id: round.id,
+          roundName: round.roundName,
+          roundType: round.roundType as FeedbackRoundType,
+          submittedCount: round.raterCount,
+          averageRating: round.averageRating ?? undefined,
+          summary: `응답 ${round.raterCount}건이 수집되어 결과를 참고할 수 있습니다.`,
+          meetsMinRaters: true,
+          positiveTags: round.positiveTags,
+          improvementTags: round.improvementTags,
+        })),
         highlights: [
           recentMonthlyRecords[0]
             ? `${recentMonthlyRecords[0].personalKpi.kpiName}의 최신 달성률은 ${
@@ -1801,7 +1732,7 @@ export async function getEvaluationWorkbenchPageData(
               }`
             : '최근 체크인 기록이 없어 면담 맥락을 별도로 확인해야 합니다.',
           feedbackRounds[0]
-            ? `${feedbackRounds[0].roundName} 라운드 응답 ${feedbackRounds[0].feedbacks.length}건이 연결되어 있습니다.`
+            ? `${feedbackRounds[0].roundName} 라운드 응답 ${feedbackRounds[0].raterCount}건이 연결되어 있습니다.`
             : '연결된 다면 피드백 라운드가 없습니다.',
         ],
       },

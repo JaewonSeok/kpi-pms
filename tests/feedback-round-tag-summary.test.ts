@@ -127,9 +127,14 @@ async function main() {
     'utf8'
   )
 
-  await run('로더가 parseFeedback360TagSummaryFromComment와 getSelectedFeedback360ResponseTagLabels를 import한다', () => {
-    assert.equal(loaderSource.includes('parseFeedback360TagSummaryFromComment'), true)
-    assert.equal(loaderSource.includes('getSelectedFeedback360ResponseTagLabels'), true)
+  await run('로더가 공통 360 근거 모듈을 쓰고, 그 모듈이 parseFeedback360TagSummaryFromComment와 getSelectedFeedback360ResponseTagLabels를 쓴다', () => {
+    const evidenceSource = readFileSync(
+      path.join(process.cwd(), 'src/server/feedback-360-evaluation-evidence.ts'),
+      'utf8'
+    )
+    assert.equal(loaderSource.includes('loadFeedback360EvaluationEvidence'), true)
+    assert.equal(evidenceSource.includes('parseFeedback360TagSummaryFromComment'), true)
+    assert.equal(evidenceSource.includes('getSelectedFeedback360ResponseTagLabels'), true)
   })
 
   await run('로더가 positiveTags·improvementTags·meetsMinRaters를 반환하고 overallComment 원문을 반환하지 않는다', () => {
