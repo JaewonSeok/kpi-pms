@@ -318,7 +318,7 @@ async function main() {
         },
         new Date('2026-06-20T00:00:00.000Z')
       ),
-      { open: true, reason: 'OPEN' }
+      { open: false, reason: 'ROUND_NOT_STARTED' }
     )
     assert.deepEqual(
       getUpwardRoundResponseGate(

@@ -97,11 +97,8 @@ export function getUpwardRoundResponseGate(
     return { open: false, reason: 'ROUND_ENDED' }
   }
 
-  if (round.status === 'IN_PROGRESS') {
-    return { open: true, reason: 'OPEN' }
-  }
-
-  if (now < startDate) {
+  // 시작(START)하지 않은 라운드(DRAFT · RATER_SELECTION)는 기간 안이어도 응답을 받지 않는다.
+  if (round.status !== 'IN_PROGRESS') {
     return { open: false, reason: 'ROUND_NOT_STARTED' }
   }
 

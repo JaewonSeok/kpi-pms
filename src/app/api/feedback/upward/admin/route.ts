@@ -72,6 +72,13 @@ async function ensureCanManageRound(actor: Awaited<ReturnType<typeof getActor>>,
   }
 }
 
+// 취소 · 마감된 진단 기간에는 짝(평가자-진단 대상자)을 더하지 않는다.
+function assertUpwardRoundAcceptsAssignments(status: string) {
+  if (['CANCELLED', 'COMPLETED', 'CLOSED'].includes(status)) {
+    throw new AppError(400, 'ROUND_ALREADY_CLOSED', '취소되거나 마감된 진단 기간에는 매핑을 추가할 수 없습니다.')
+  }
+}
+
 function cloneTemplateQuestions(
   questions: Array<{
     category: string | null
@@ -997,6 +1004,7 @@ export async function POST(request: Request) {
       if (!round) {
         throw new AppError(404, 'ROUND_NOT_FOUND', '진단 기간을 찾을 수 없습니다.')
       }
+      assertUpwardRoundAcceptsAssignments(round.status)
       if (!evaluator || !evaluatee) {
         throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '평가자 또는 진단 대상자를 찾을 수 없습니다.')
       }
@@ -1066,6 +1074,7 @@ export async function POST(request: Request) {
       if (!round) {
         throw new AppError(404, 'ROUND_NOT_FOUND', '진단 기간을 찾을 수 없습니다.')
       }
+      assertUpwardRoundAcceptsAssignments(round.status)
 
       const settings = parseUpwardReviewSettings(round.documentSettings)
       const employees = await prisma.employee.findMany({

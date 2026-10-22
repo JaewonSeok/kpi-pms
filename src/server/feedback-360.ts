@@ -2259,7 +2259,9 @@ export async function getFeedback360PageData(
       }
     }
 
+    // '작성할 응답'에는 지금 제출할 수 있는 것만 둔다. 응답 제출(/api/feedback POST)은 IN_PROGRESS 라운드에서만 받는다.
     const pendingRequestsRaw = scopedRounds
+      .filter((round) => round.status === 'IN_PROGRESS')
       .flatMap((round) =>
         round.feedbacks
           .filter(
