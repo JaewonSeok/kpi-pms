@@ -46,13 +46,22 @@ const state = {
   jobs: [] as Job[],
   rows: [] as Row[],
   keys: new Set<string>(),
+  // 본 동작의 쓰기(체크인 · 평가). 트랜잭션이 던지면 그 안의 쓰기는 되돌린다(실제 DB 처럼).
+  mainWrites: [] as string[],
   ceoLookupFails: false,
+  ceoLookups: 0,
   unstubbed: [] as string[],
 }
 function resetStore() {
   state.jobs = []
   state.rows = []
   state.keys = new Set()
+  state.mainWrites = []
+  state.ceoLookups = 0
+}
+const recordMain = (call: string, value: unknown = {}) => async () => {
+  state.mainWrites.push(call)
+  return value
 }
 
 const TYPES = [
@@ -86,6 +95,7 @@ const IN_WINDOW = new Date(Date.now() + 24 * 60 * 60 * 1000)
 function employeeFindMany(args?: { where?: Record<string, unknown> }) {
   const where = args?.where ?? {}
   if (where.role === 'ROLE_CEO') {
+    state.ceoLookups += 1
     if (state.ceoLookupFails) throw new Error('CEO_LOOKUP_FAILED')
     return Object.entries(PEOPLE)
       .filter(([, person]) => person.role === 'ROLE_CEO')
@@ -98,6 +108,11 @@ function employeeFindMany(args?: { where?: Record<string, unknown> }) {
       .filter(([, person]) => wanted.has(person.gwsEmail.toLowerCase()))
       .map(([id]) => ({ id }))
   }
+  // 수동 발송: 고른 직원(id in)
+  const idFilter = where.id as { in?: string[] } | undefined
+  if (idFilter?.in) {
+    return idFilter.in.map((id) => ({ id, empName: PEOPLE[id]?.empName ?? id }))
+  }
   return Object.entries(PEOPLE).map(([id, person]) => ({ id, empName: person.empName, role: person.role }))
 }
 
@@ -106,10 +121,11 @@ function makeDb(extra: Record<string, Record<string, unknown>> = {}) {
     employee: {
       findMany: async (args?: { where?: Record<string, unknown> }) => employeeFindMany(args),
       findUnique: async (args: { where: { id: string } }) => {
-        const person = PEOPLE[args.where.id]
+        const person = PEOPLE[args.where.id] ?? (args.where.id.startsWith('emp-bulk-') ? { empName: args.where.id, gwsEmail: `${args.where.id}@example.com` } : null)
         return person ? { id: args.where.id, empName: person.empName, gwsEmail: person.gwsEmail, teamLeaderId: null } : null
       },
     },
+    notificationAttempt: { create: async () => ({}) },
     notificationTemplate: { upsert: async () => ({}), findMany: async () => TEMPLATES },
     notificationPreference: {
       upsert: async (args: { where: { employeeId: string } }) => ({
@@ -140,7 +156,12 @@ function makeDb(extra: Record<string, Record<string, unknown>> = {}) {
         })
         return { id: `job-${state.jobs.length}` }
       },
-      findMany: async () => [],
+      // 수동 발송이 방금 만든 잡을 찾는 조회(idempotencyKey endsWith)에는 그 잡들을 돌려준다. 발송 단계(getProcessableJobs)는 빈 목록.
+      findMany: async (args?: { where?: { idempotencyKey?: { endsWith?: string } } }) => {
+        const suffix = args?.where?.idempotencyKey?.endsWith
+        return suffix ? state.jobs.filter((job) => job.idempotencyKey.endsWith(suffix)).map((_, index) => ({ id: `job-${index + 1}` })) : []
+      },
+      update: async () => ({}),
     },
     notification: {
       create: async (args: { data: Row }) => {
@@ -195,7 +216,19 @@ function makeDb(extra: Record<string, Record<string, unknown>> = {}) {
     get: (_target, key) => {
       if (typeof key !== 'string' || key === 'then') return undefined
       if (key === '$transaction') {
-        return async (fn: ((tx: unknown) => unknown) | unknown[]) => (Array.isArray(fn) ? Promise.all(fn) : fn(db))
+        // 안에서 던지면 그 안의 본 동작 쓰기를 되돌린다(실제 트랜잭션처럼).
+        return async (fn: ((tx: unknown) => unknown) | unknown[]) => {
+          if (Array.isArray(fn)) return Promise.all(fn)
+          const mark = state.mainWrites.length
+          const rowMark = state.rows.length
+          try {
+            return await fn(db)
+          } catch (error) {
+            state.mainWrites.length = mark
+            state.rows.length = rowMark
+            throw error
+          }
+        }
       }
       const methods = models[key] ?? {}
       return new Proxy({} as Record<string, unknown>, {
@@ -250,6 +283,7 @@ async function main() {
   const checkinRoute = await import('../src/app/api/checkin/route')
   const reviewRoute = await import('../src/app/api/evaluation/[id]/review/route')
   const submitRoute = await import('../src/app/api/evaluation/[id]/submit/route')
+  const manualSendRoute = await import('../src/app/api/admin/notifications/manual-send/route')
 
   const setSubstitutes = (value: string | undefined) => {
     if (value === undefined) delete process.env.CEO_SUBSTITUTE_EMAILS
@@ -276,9 +310,9 @@ async function main() {
     routeDb = makeDb({
       checkIn: {
         findUnique: async () => ({ id: 'ci-1', ownerId, managerId, owner: { teamLeaderId: null, sectionChiefId: null, divisionHeadId: null } }),
-        update: async () => ({ id: 'ci-1' }),
+        update: recordMain('checkIn.update', { id: 'ci-1' }),
         findMany: async () => [{ id: 'ci-0', energyLevel: 1 }],
-        create: async () => ({ id: 'ci-new', ownerId, managerId }),
+        create: recordMain('checkIn.create', { id: 'ci-new', ownerId, managerId }),
       },
       evaluation: {
         findUnique: async (args: { where: { id?: string } }) =>
@@ -292,10 +326,14 @@ async function main() {
                   ? { id: 'eval-prev', evaluatorId: DIV }
                   : // 반려의 이전 단계(FINAL)를 대표가 대행했다
                     { id: 'eval-prev', evaluatorId: CEO },
-        update: async () => ({}),
-        create: async () => ({ id: 'eval-next' }),
+        update: recordMain('evaluation.update'),
+        create: recordMain('evaluation.create', { id: 'eval-next' }),
       },
-      evaluationItem: { updateMany: async () => ({ count: 1 }), update: async () => ({}), findMany: async () => [{ personalKpiId: 'kpi-1' }] },
+      evaluationItem: {
+        updateMany: recordMain('evaluationItem.updateMany', { count: 1 }),
+        update: recordMain('evaluationItem.update'),
+        findMany: async () => [{ personalKpiId: 'kpi-1' }],
+      },
     })
     nextStageEvaluatorId = params.ceoIs === 'none' ? DIV : CEO
     const statuses: Record<string, number> = {}
@@ -338,7 +376,7 @@ async function main() {
         { params: Promise.resolve({ id: 'eval-submit' }) }
       )
     ).status
-    return { rows: [...state.rows], statuses }
+    return { rows: [...state.rows], statuses, mainWrites: [...state.mainWrites] }
   }
   function submitEvaluation() {
     return {
@@ -527,6 +565,75 @@ async function main() {
           `SYSTEM:${DIV}:반복 낮은 에너지 감지`,
         ].sort(),
       }
+    )
+  })
+
+  await run('ⓗ 대표 조회가 실패해도 체크인 완료 · 체크인 예약 · 평가 반려 · 평가 제출의 본 동작은 성공한다', async () => {
+    setSubstitutes('hr@example.com')
+    const normal = await runDirectSites({ ceoIs: 'owner' })
+    state.ceoLookupFails = true
+    try {
+      const failing = await runDirectSites({ ceoIs: 'owner' })
+      assert.deepEqual(
+        { statuses: failing.statuses, mainWrites: [...failing.mainWrites].sort(), rows: failing.rows.length },
+        // 본 동작의 쓰기는 대표 조회가 성공할 때와 같고, 알림 행만 없다.
+        {
+          statuses: { complete: 200, schedule: 200, reject: 200, submit: 200 },
+          mainWrites: [...normal.mainWrites].sort(),
+          rows: 0,
+        }
+      )
+    } finally {
+      state.ceoLookupFails = false
+    }
+  })
+
+  await run('ⓘ 템플릿 테스트 발송의 IN_APP 도 대표에게 가지 않는다', async () => {
+    setSubstitutes('hr@example.com')
+    resetStore()
+    const send = (recipientId: string) =>
+      service.sendNotificationTemplateTest(
+        {
+          recipientId,
+          type: 'SYSTEM' as never,
+          code: 'system-in-app',
+          channel: 'IN_APP' as never,
+          subjectTemplate: '테스트 제목',
+          bodyTemplate: '테스트 본문',
+          payload: {},
+        },
+        makeDb() as never
+      )
+    const ceo = (await send(CEO)) as { suppressReason?: string | null }
+    const member = await send(MEMBER)
+    assert.deepEqual(
+      {
+        ceoRows: state.rows.filter((row) => row.recipientId === CEO).length,
+        ceoSuppressed: Boolean(ceo?.suppressReason),
+        memberRows: state.rows.filter((row) => row.recipientId === MEMBER).length,
+        memberSuppressed: Boolean((member as { suppressReason?: string | null })?.suppressReason),
+      },
+      { ceoRows: 0, ceoSuppressed: true, memberRows: 1, memberSuppressed: false }
+    )
+  })
+
+  await run('ⓙ 한 요청에서 수신자 30명에게 보낼 때 대표 조회는 1회다', async () => {
+    setSubstitutes('hr@example.com')
+    resetStore()
+    routeDb = makeDb()
+    sessionUser = { id: HR, role: 'ROLE_ADMIN', name: '인사담당', email: 'hr@example.com' }
+    const employeeIds = Array.from({ length: 30 }, (_, index) => `emp-bulk-${index + 1}`)
+    const response = await manualSendRoute.POST(
+      jsonRequest('http://localhost/api/admin/notifications/manual-send', 'POST', {
+        employeeIds,
+        stage: 'first',
+        subject: '평가 리마인더',
+        body: '평가를 진행해 주세요.',
+      })
+    )
+    assert.deepEqual(
+      { status: response.status, ceoLookups: state.ceoLookups, recipients: new Set(state.jobs.map((job) => job.recipientId)).size },
+      { status: 200, ceoLookups: 1, recipients: 30 }
     )
   })
 

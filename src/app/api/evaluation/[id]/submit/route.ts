@@ -3,7 +3,7 @@ import { resolveCarrierRecord } from '@/lib/resolve-carrier-record'
 import { getServerSession } from 'next-auth'
 import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { authOptions } from '@/lib/auth'
-import { createDirectNotifications } from '@/lib/notification-service'
+import { createDirectNotificationsSafely } from '@/lib/notification-service'
 import { prisma } from '@/lib/prisma'
 import type { AuthSession } from '@/types/auth'
 import { SubmitEvaluationSchema } from '@/lib/validations'
@@ -113,6 +113,8 @@ export async function PATCH(
     let totalScore = 0
     let finalized = false
     let nextStageLabel: string | null = null
+    // 트랜잭션 콜백 안에서 채운다(콜백 대입은 흐름 분석이 따라가지 않아 as 로 타입을 둔다).
+    let nextStageNotification = null as NextStageNotification | null
 
     // 2026 가감점 분기 — active && cycle.year===2026 && stage∈{FIRST,SECOND,FINAL}일 때만 검증/저장.
     // zero-sum 총합(=0) 검증은 cross-person이라 본부검수(HR) 단계에서 별도로 집계한다.
@@ -386,13 +388,18 @@ export async function PATCH(
       })
 
       if (nextStageEntry) {
-        await createNextStageEvaluation(tx, evaluation, {
+        nextStageNotification = await createNextStageEvaluation(tx, evaluation, {
           stage: nextStageEntry.stage,
           stageLabel: nextStageEntry.stageLabel,
           evaluatorId: nextStageEntry.evaluatorId,
         })
       }
     })
+
+    // 다음 단계 배정 알림은 제출 트랜잭션이 끝난 뒤에 만든다. 실패해도 제출은 되돌리지 않는다.
+    if (nextStageNotification) {
+      await createDirectNotificationsSafely(prisma, nextStageNotification, 'evaluation-submit')
+    }
 
     await createAuditLog({
       ...resolveAuditActor(session),
@@ -465,7 +472,7 @@ async function createNextStageEvaluation(
   })
 
   if (!target) {
-    return
+    return null
   }
 
   const existing = await tx.evaluation.findUnique({
@@ -513,7 +520,8 @@ async function createNextStageEvaluation(
     nextEvaluationId = created.id
   }
 
-  await createDirectNotifications(tx, {
+  // 알림은 만들지 않고 내용만 돌려준다. 호출하는 쪽이 트랜잭션이 끝난 뒤에 만든다.
+  return {
     recipientId: nextStageEntry.evaluatorId,
     // 다음 단계 평가 · 확정을 할 사람으로 받는다.
     ceoCapacity: 'ACTS_AS_EVALUATOR',
@@ -528,5 +536,7 @@ async function createNextStageEvaluation(
         : '/evaluation/performance',
       channel: 'IN_APP',
     },
-  })
+  } satisfies NextStageNotification
 }
+
+type NextStageNotification = Parameters<typeof createDirectNotificationsSafely>[1]

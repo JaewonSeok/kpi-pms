@@ -535,6 +535,21 @@ export async function createDirectNotifications(
   return targets.length
 }
 
+// 본 동작(체크인 · 평가)이 끝난 뒤 알림을 만든다. 알림 생성이 실패해도(대표 조회 실패 포함) 본 동작은 그대로 두고 로그만 남긴다.
+// 트랜잭션 안에서 부르지 않는다: 실패한 쿼리가 트랜잭션을 깨뜨려 본 동작이 되돌려질 수 있다.
+export async function createDirectNotificationsSafely(
+  db: Pick<Prisma.TransactionClient, 'employee' | 'notification'>,
+  params: Parameters<typeof createDirectNotifications>[1],
+  context: string
+) {
+  try {
+    return await createDirectNotifications(db, params)
+  } catch (error) {
+    console.error(`[notification] ${context} 알림 생성 실패 (무시):`, error)
+    return 0
+  }
+}
+
 function getEmailTransport() {
   if (!isFeatureEnabled('emailDelivery') || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     return nodemailer.createTransport({ jsonTransport: true })
@@ -623,10 +638,31 @@ export async function sendNotificationTemplateTest(
 
   try {
     if (params.channel === NotificationDeliveryChannel.IN_APP) {
+      // 수신자 결정은 resolveNotificationRecipients 를 거친다. 대표면 알림 행을 만들지 않고 사유를 돌려준다.
+      const [inAppTarget] = await resolveNotificationRecipients(db, { recipientId: recipient.id })
+      if (!inAppTarget) {
+        const suppressReason = 'CEO_RECIPIENT_SUPPRESSED'
+        await db.notificationJob.update({
+          where: { id: job.id },
+          data: {
+            status: NotificationJobStatus.SUPPRESSED,
+            suppressedAt: new Date(),
+            suppressReason,
+          },
+        })
+        return {
+          jobId: job.id,
+          channel: params.channel,
+          recipientName: recipient.empName,
+          recipientEmail: recipient.gwsEmail,
+          suppressReason,
+        }
+      }
+
       await db.$transaction(async (tx) => {
         await tx.notification.create({
           data: {
-            recipientId: recipient.id,
+            recipientId: inAppTarget.recipientId,
             type: params.type,
             title,
             message,
@@ -1288,15 +1324,19 @@ async function deliverDigestGroup(
 
 export async function dispatchDueNotificationJobs(
   db: PrismaClient = prisma,
-  jobIds?: string[]
+  jobIds?: string[],
+  // 같은 요청이 이미 조회한 대표 집합. 있으면 다시 조회하지 않는다.
+  ceoRecipientIds?: ReadonlySet<string>
 ): Promise<DispatchSummary> {
   const jobs = await getProcessableJobs(db, jobIds)
   // 대표 조회가 실패하면 빈 집합으로 넘어가지 않는다(대표에게 메일이 나갈 수 있다).
   // 이 실행에서는 EMAIL 잡을 보내지 않고 대기로 남겨 다음 실행에서 다시 시도한다. IN_APP 은 그대로 보낸다.
-  const ceoIds = await getCeoRecipientIds(db).catch((error) => {
-    console.error('[notification-dispatch] CEO lookup failed; EMAIL jobs are held for the next run', error)
-    return null
-  })
+  const ceoIds = ceoRecipientIds
+    ? new Set(ceoRecipientIds)
+    : await getCeoRecipientIds(db).catch((error) => {
+        console.error('[notification-dispatch] CEO lookup failed; EMAIL jobs are held for the next run', error)
+        return null
+      })
   const summary: DispatchSummary = {
     processedCount: jobs.length,
     successCount: 0,

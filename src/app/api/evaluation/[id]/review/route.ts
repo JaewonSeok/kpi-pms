@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { authOptions } from '@/lib/auth'
-import { createDirectNotifications } from '@/lib/notification-service'
+import { createDirectNotificationsSafely } from '@/lib/notification-service'
 import { prisma } from '@/lib/prisma'
 import type { AuthSession } from '@/types/auth'
 import { RejectEvaluationSchema } from '@/lib/validations'
@@ -147,8 +147,12 @@ export async function PATCH(
           weightedScore: null,
         },
       })
+    })
 
-      await createDirectNotifications(tx, {
+    // 알림은 반려 트랜잭션이 끝난 뒤에 만든다. 실패해도 반려는 되돌리지 않는다.
+    await createDirectNotificationsSafely(
+      prisma,
+      {
         recipientId: previousEvaluation.evaluatorId,
         // 반려된 단계를 다시 평가할 사람으로 받는다.
         ceoCapacity: 'ACTS_AS_EVALUATOR',
@@ -161,8 +165,9 @@ export async function PATCH(
           )}`,
           channel: 'IN_APP',
         },
-      })
-    })
+      },
+      'evaluation-reject'
+    )
 
     await createAuditLog({
       ...resolveAuditActor(session),

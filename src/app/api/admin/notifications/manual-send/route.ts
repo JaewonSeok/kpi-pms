@@ -5,7 +5,7 @@ import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { ManualNotificationSendSchema } from '@/lib/validations'
 import { NotificationType } from '@prisma/client'
-import { dispatchDueNotificationJobs, queueNotification } from '@/lib/notification-service'
+import { dispatchDueNotificationJobs, getCeoRecipientIds, queueNotification } from '@/lib/notification-service'
 
 export const maxDuration = 300
 
@@ -78,6 +78,8 @@ export async function POST(request: Request) {
 
     // ③④ 직원마다 queueNotification 1회 호출
     // ★ queueNotification 반환 타입은 { created, suppressed, duplicates } — jobId 미포함
+    // 대표 조회는 요청당 1회만 하고 모든 queueNotification · 발송에 넘긴다.
+    const ceoRecipientIds = await getCeoRecipientIds(prisma)
     let queuedCount = 0
     let suppressedCount = 0
     let duplicateCount = 0
@@ -93,6 +95,7 @@ export async function POST(request: Request) {
           payload,
           subjectOverride: subject,
           bodyOverride: bodyText,
+          ceoRecipientIds,
         },
         prisma
       )
@@ -116,7 +119,7 @@ export async function POST(request: Request) {
       const jobIds = createdJobs.map((j) => j.id)
       dispatchedCount = jobIds.length
       if (jobIds.length > 0) {
-        dispatchSummary = await dispatchDueNotificationJobs(prisma, jobIds)
+        dispatchSummary = await dispatchDueNotificationJobs(prisma, jobIds, ceoRecipientIds)
       }
     }
 
