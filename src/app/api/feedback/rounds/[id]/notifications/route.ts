@@ -87,6 +87,7 @@ export async function POST(request: Request, context: RouteContext) {
         id: true,
         roundName: true,
         roundType: true,
+        status: true,
         evalCycle: {
           select: {
             orgId: true,
@@ -123,6 +124,11 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!canManageRound) {
       throw new AppError(403, 'FORBIDDEN', '이 리뷰 라운드의 알림을 발송할 권한이 없습니다.')
+    }
+
+    // 취소된 라운드에는 어떤 알림도 보내지 않는다(360 · 상향평가 공통).
+    if (round.status === 'CANCELLED') {
+      throw new AppError(400, 'ROUND_CANCELLED', '취소된 라운드에는 알림을 보낼 수 없습니다.')
     }
 
     if (validated.data.action === 'send-result-share') {

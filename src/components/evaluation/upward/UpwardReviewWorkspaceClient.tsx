@@ -20,6 +20,7 @@ import { DEFAULT_LEADERSHIP_DIAGNOSIS_QUESTIONS } from '@/lib/upward-review'
 import { Feedback360Avatar } from '../feedback360/ppt/Feedback360Avatar'
 import { LeadershipDiagnosisAiCoachingPanel } from './LeadershipDiagnosisAiCoachingPanel'
 import { LeadershipDiagnosisOpsDashboard } from './LeadershipDiagnosisOpsDashboard'
+import { UpwardRoundStatusButton } from './UpwardRoundStatusButton'
 import {
   buildLeadershipDiagnosisCategorySummaries,
   getLeadershipDiagnosisDevelopmentCategories,
@@ -2428,9 +2429,12 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                   <button type="button" className={secondaryButtonClassName} disabled={busyKey != null} onClick={async () => { const result = await runAdminAction('syncRoundQuestions', { roundId: adminData.selectedRound?.id }); if (!result) return; startTransition(() => router.refresh()) }}>
                     문항 세트 다시 적용
                   </button>
-                  <button type="button" className={secondaryButtonClassName} disabled={busyKey != null} onClick={async () => { const result = await runAdminAction('updateRoundStatus', { roundId: adminData.selectedRound?.id, action: adminData.selectedRound?.status === 'IN_PROGRESS' ? 'CLOSE' : 'START' }); if (!result) return; startTransition(() => router.refresh()) }}>
-                    {adminData.selectedRound.status === 'IN_PROGRESS' ? '진단 기간 마감' : '진단 기간 시작'}
-                  </button>
+                  <UpwardRoundStatusButton
+                    round={adminData.selectedRound}
+                    busy={busyKey != null}
+                    className={secondaryButtonClassName}
+                    onAction={async (statusAction) => { const result = await runAdminAction('updateRoundStatus', { roundId: adminData.selectedRound?.id, action: statusAction }); if (!result) return; startTransition(() => router.refresh()) }}
+                  />
                   <button type="button" className={secondaryButtonClassName} disabled={busyKey != null} onClick={async () => { const result = await runAdminAction('setRelease', { roundId: adminData.selectedRound?.id, released: !adminData.selectedRound?.released }); if (!result) return; startTransition(() => router.refresh()) }}>
                     {adminData.selectedRound.released ? '결과 비공개 전환' : '결과 공개'}
                   </button>

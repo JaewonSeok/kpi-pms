@@ -828,6 +828,22 @@ export async function POST(request: Request) {
       const nextStatus =
         data.action === 'START' ? 'IN_PROGRESS' : data.action === 'CLOSE' ? 'COMPLETED' : 'IN_PROGRESS'
 
+      // 상태 전환 허용표: START 는 시작 전(DRAFT · RATER_SELECTION), REOPEN 은 마감(COMPLETED · CLOSED), CLOSE 는 진행 중만.
+      if (data.action === 'START') {
+        if (isFeedback360RoundEnded(round.status)) {
+          throw new AppError(400, 'ROUND_ENDED_USE_REOPEN', '마감된 라운드는 다시 열기로 엽니다')
+        }
+        if (round.status !== 'CANCELLED' && !['DRAFT', 'RATER_SELECTION'].includes(round.status)) {
+          throw new AppError(400, 'ROUND_ALREADY_STARTED', '이미 진행 중인 리더십 진단 기간입니다.')
+        }
+      }
+      if (data.action === 'REOPEN' && !isFeedback360RoundEnded(round.status)) {
+        throw new AppError(400, 'ROUND_NOT_ENDED', '마감된 리더십 진단 기간만 다시 열 수 있습니다.')
+      }
+      if (data.action === 'CLOSE' && round.status !== 'IN_PROGRESS') {
+        throw new AppError(400, 'ROUND_NOT_IN_PROGRESS', '진행 중인 리더십 진단 기간만 마감할 수 있습니다.')
+      }
+
       // (다시) 시작: 취소된 라운드와 짝이 0건인 라운드는 거절한다. 시작하면 결과 공개 표시를 지운다(다른 설정은 유지).
       const currentSettings =
         round.documentSettings && typeof round.documentSettings === 'object' && !Array.isArray(round.documentSettings)
