@@ -223,10 +223,10 @@ async function main() {
     assert.deepEqual({ status, writes: roundUpdates.length }, { status: 400, writes: 0 })
   })
 
-  await run('ⓓ 공개 후 다시 시작하면 공개 표시가 지워진다', async () => {
+  await run('ⓓ 공개 후 다시 열면 공개 표시가 지워진다', async () => {
     scenario = { status: 'COMPLETED', released: true, viewerMode: 'TARGET_ONLY', feedbackCount: 3 }
     roundUpdates.length = 0
-    const status = await adminAction('updateRoundStatus', { roundId: 'round-up', action: 'START' })
+    const status = await adminAction('updateRoundStatus', { roundId: 'round-up', action: 'REOPEN' })
     const written = roundUpdates[0]?.documentSettings as Record<string, unknown> | undefined
     assert.deepEqual(
       {
