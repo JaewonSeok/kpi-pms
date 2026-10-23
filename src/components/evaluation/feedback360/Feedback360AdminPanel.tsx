@@ -48,6 +48,7 @@ import {
 import { ResponseRateCard } from './ResponseRateCard'
 import { RichTextEmailEditor } from './RichTextEmailEditor'
 import { Feedback360MailDiagnosticsPanel } from './ppt/Feedback360MailDiagnosticsPanel'
+import { describeRoundNotificationOutcome, sendFeedback360Reminders } from '@/lib/round-notification-batches'
 import { Feedback360VisibilitySettings } from './ppt/Feedback360VisibilitySettings'
 // Personal report and analysis settings
 
@@ -65,6 +66,8 @@ type MailDeliveryResult = {
   message: string
   failureReason?: string
   retryMode: 'test' | 'send'
+  // 묶음 발송이 중간에 멈췄을 때: 다시 보낼 대상과 실패한 묶음 순번
+  retryBatch?: { targetIds: string[]; startBatchIndex: number }
 }
 
 type ReminderAction =
@@ -1598,11 +1601,18 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     }
   }
 
-  async function handleReminder(mode: 'test' | 'send') {
+  // 리마인드 발송(모든 탭) · 테스트 발송. 받는 사람이 100명을 넘으면 100명씩 나눠 차례로 보낸다(sendFeedback360Reminders).
+  // retry 가 있으면 실패한 묶음부터 다시 보낸다.
+  async function handleReminder(mode: 'test' | 'send', retry?: { targetIds: string[]; startBatchIndex: number }) {
     if (!selectedRound) return
 
     setBusy(true)
     setMailDeliveryResult(null)
+    const reminderTargetIds =
+      retry?.targetIds ??
+      (selectedTargetIds.length
+        ? selectedTargetIds
+        : Array.from(new Set(filteredReminderTargets.map((item) => item.recipientId))))
     try {
       let riskHeaders: HeadersInit | undefined
       if (mode === 'send' && reminderAction === 'send-result-share') {
@@ -1619,29 +1629,52 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         riskHeaders = confirmedHeaders
       }
 
-      const response = await fetch(`/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/notifications`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(riskHeaders ?? {}) },
-        body: JSON.stringify({
-          action: mode === 'test' ? 'test-send' : reminderAction,
-          roundId: selectedRound.id,
-          targetIds: selectedTargetIds.length
-            ? selectedTargetIds
-            : Array.from(new Set(filteredReminderTargets.map((item) => item.recipientId))),
-          subject: reminderSubject,
-          body: reminderBody,
-          shareAudience,
-          testEmail: mode === 'test' ? testEmail : undefined,
-        }),
+      let lastMessage: string | undefined
+      const outcome = await sendFeedback360Reminders({
+        mode,
+        roundId: selectedRound.id,
+        action: reminderAction,
+        targetIds: reminderTargetIds,
+        subject: reminderSubject,
+        body: reminderBody,
+        shareAudience,
+        testEmail,
+        startBatchIndex: retry?.startBatchIndex,
+        onProgress: (current, total) => {
+          if (total > 1) setBanner({ tone: 'info', message: `${current}/${total} 묶음 보내는 중입니다.` })
+        },
+        post: async (url, body) => {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(riskHeaders ?? {}) },
+            body: JSON.stringify(body),
+          })
+          const json = await response.json()
+          if (!json.success) {
+            throw new Error(json.error?.message || '리마인드를 발송하지 못했습니다.')
+          }
+          lastMessage = json.data?.message
+          return json.data ?? {}
+        },
       })
-      const json = await response.json()
-      if (!json.success) {
-        throw new Error(json.error?.message || '리마인드를 발송하지 못했습니다.')
+      if (outcome.failedBatchIndex !== null) {
+        // 앞 묶음은 이미 대기열에 들어갔다. 실패한 묶음부터 다시 보낼 수 있게 남긴다.
+        const failureMessage = getFeedback360MailErrorMessage(outcome.errorMessage ?? '메일 발송에 실패했습니다.')
+        setMailDeliveryResult({
+          tone: 'error',
+          title: reminderAction === 'send-result-share' ? '결과 공유 메일 발송 실패' : '리마인드 메일 발송 실패',
+          recipientsLabel: `발송 대상 ${reminderTargetIds.length}명 중 ${reminderTargetIds.length - outcome.remainingRecipientIds.length}명 보냄`,
+          channelLabel: '이메일 + 앱 알림',
+          providerStatus: '기존 360 알림 발송 경로가 오류를 반환했습니다.',
+          message: describeRoundNotificationOutcome(outcome),
+          failureReason: failureMessage,
+          retryMode: mode,
+          retryBatch: mode === 'send' ? { targetIds: reminderTargetIds, startBatchIndex: outcome.failedBatchIndex } : undefined,
+        })
+        setBanner({ tone: 'error', message: failureMessage })
+        return
       }
-      const targetCount =
-        mode === 'test'
-          ? 1
-          : selectedTargetIds.length || visibleReminderRecipientIds.length
+      const targetCount = mode === 'test' ? 1 : reminderTargetIds.length
       const resultTitle =
         mode === 'test'
           ? '테스트 메일 발송 결과'
@@ -1649,8 +1682,11 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
             ? '결과 공유 메일 발송 결과'
             : '리마인드 메일 발송 결과'
       const successMessage =
-        json.data?.message ??
-        (mode === 'test' ? '테스트 발송이 완료되었습니다.' : '메일 발송을 예약했습니다.')
+        mode === 'test'
+          ? lastMessage ?? '테스트 발송이 완료되었습니다.'
+          : outcome.batchCount > 1
+            ? describeRoundNotificationOutcome(outcome)
+            : `${lastMessage ?? '메일 발송을 예약했습니다.'} 실제 발송은 평일 09시 또는 알림 운영 화면의 '즉시 실행' 때 나갑니다.`
       setMailDeliveryResult({
         tone: 'success',
         title: resultTitle,
@@ -1681,7 +1717,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         recipientsLabel:
           mode === 'test'
             ? `테스트 수신자 ${testEmail || '미입력'}`
-            : `발송 대상 ${selectedTargetIds.length || visibleReminderRecipientIds.length}명`,
+            : `발송 대상 ${reminderTargetIds.length}명`,
         channelLabel: /이메일 발송 설정/.test(message) ? '앱 알림 / 이메일 설정 확인' : '이메일 + 앱 알림',
         providerStatus: /이메일 발송 설정/.test(message)
           ? '이메일 provider 설정이 비활성 또는 미완료 상태입니다.'
@@ -4932,7 +4968,8 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
               <Feedback360MailDiagnosticsPanel
                 result={mailDeliveryResult}
                 busy={busy}
-                onRetry={() => void handleReminder(mailDeliveryResult.retryMode)}
+                onRetry={() => void handleReminder(mailDeliveryResult.retryMode, mailDeliveryResult.retryBatch)}
+                retryLabel={mailDeliveryResult.retryBatch ? '나머지 다시 보내기' : undefined}
                 onClose={() => setMailDeliveryResult(null)}
               />
             ) : (
