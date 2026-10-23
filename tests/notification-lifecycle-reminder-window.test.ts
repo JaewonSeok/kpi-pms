@@ -58,10 +58,14 @@ function createDb(buildCycle: (window: Window) => CycleDates) {
       findMany: async () => [],
     },
     employee: {
-      findMany: async () => [
-        { id: 'emp-admin', empName: 'Admin', role: 'ROLE_ADMIN' },
-        { id: 'emp-member', empName: 'Member', role: 'ROLE_MEMBER' },
-      ],
+      // 대표 조회(getCeoRecipientIds: where.role ROLE_CEO)에는 대표가 없다.
+      findMany: async (args?: { where?: { role?: string } }) =>
+        args?.where?.role === 'ROLE_CEO'
+          ? []
+          : [
+              { id: 'emp-admin', empName: 'Admin', role: 'ROLE_ADMIN' },
+              { id: 'emp-member', empName: 'Member', role: 'ROLE_MEMBER' },
+            ],
       findUnique: async (args: { where: { id: string } }) => ({ id: args.where.id, empName: args.where.id, gwsEmail: null }),
     },
     evalCycle: {

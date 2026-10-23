@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
-import { queueNotification, sendAdhocNotificationTest } from '@/lib/notification-service'
+import { getCeoRecipientIds, queueNotification, sendAdhocNotificationTest } from '@/lib/notification-service'
 import { buildReviewEmailContent } from '@/lib/review-email-editor'
 import type { AuthSession } from '@/types/auth'
 import {
@@ -293,6 +293,8 @@ export async function POST(request: Request, context: RouteContext) {
       throw new AppError(400, 'NO_RECIPIENTS', '발송 대상자를 선택해 주세요.')
     }
 
+    // 대표 조회는 요청당 1회만 하고 모든 queueNotification 에 넘긴다.
+    const ceoRecipientIds = await getCeoRecipientIds(prisma)
     for (const recipient of recipients) {
       const notificationLink =
         round.roundType === 'UPWARD'
@@ -319,6 +321,7 @@ export async function POST(request: Request, context: RouteContext) {
           cycleName: round.roundName,
           link: notificationLink,
         },
+        ceoRecipientIds,
       })
 
       queuedCount += result.created

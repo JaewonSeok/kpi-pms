@@ -3,7 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { resolveOrgKpiScopeFromDepartmentId } from '@/lib/org-kpi-scope'
-import { queueNotification } from '@/lib/notification-service'
+import { getCeoRecipientIds, queueNotification } from '@/lib/notification-service'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 
 type RouteContext = {
@@ -109,6 +109,8 @@ export async function POST(request: Request, context: RouteContext) {
       })
       const teamDept = departments.find((d) => d.id === orgKpi.deptId)
       const teamName = teamDept?.deptName ?? ''
+      // 대표 조회는 요청당 1회만 한다.
+      const ceoRecipientIds = await getCeoRecipientIds(prisma)
       for (const admin of admins) {
         await queueNotification({
           recipientId: admin.id,
@@ -122,6 +124,7 @@ export async function POST(request: Request, context: RouteContext) {
             link: '/admin/kpi/exception-requests',
           },
           channels: ['IN_APP'],
+          ceoRecipientIds,
         })
       }
     } catch (notifError) {

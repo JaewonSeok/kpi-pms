@@ -23,6 +23,7 @@ See [server-tiers.md](./server-tiers.md) for the 4-tier mapping.
 | `OPENAI_API_KEY` | optional | required if AI flag enabled | required if AI flag enabled | AI assist |
 | `OPENAI_MODEL` | optional | recommended | recommended | Preferred model env name for AI assist |
 | `SMTP_PASS` | optional | required if email enabled | required if email enabled | Notification email |
+| `CEO_SUBSTITUTE_EMAILS` | optional | recommended | required | 대표 앞 평가 · 보정 · 다음 단계 · 반려 알림을 대신 받을 HR gwsEmail(쉼표 구분). 비면 대표 앞 알림은 아무에게도 가지 않는다 |
 | `SENTRY_DSN` | optional | recommended | recommended | Error tracking hook |
 | `BACKUP_BUCKET_URI` | optional | required | required | Backup destination |
 
