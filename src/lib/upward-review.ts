@@ -426,65 +426,6 @@ export type UpwardSuggestion = {
   reason: string
 }
 
-export function buildUpwardSuggestions(params: {
-  employees: UpwardDirectoryEmployee[]
-  targetTypes: UpwardTargetType[]
-  evaluateeId?: string | null
-  existingPairs?: Array<{ evaluatorId: string; evaluateeId: string }>
-}) {
-  const existingPairKeys = new Set(
-    (params.existingPairs ?? []).map((item) => `${item.evaluatorId}:${item.evaluateeId}`)
-  )
-  const selectedTargetIds = params.evaluateeId ? new Set([params.evaluateeId]) : null
-  const suggestions: UpwardSuggestion[] = []
-
-  for (const evaluatee of params.employees) {
-    if (selectedTargetIds && !selectedTargetIds.has(evaluatee.id)) continue
-
-    const targetType = getUpwardTargetType(evaluatee)
-    if (!targetType || !params.targetTypes.includes(targetType)) continue
-
-    for (const evaluator of params.employees) {
-      if (evaluator.id === evaluatee.id) continue
-
-      if (targetType === 'PM') {
-        if (
-          typeof evaluator.jobTitle === 'string' &&
-          typeof evaluatee.teamName === 'string' &&
-          evaluator.teamName === evaluatee.teamName &&
-          !existingPairKeys.has(`${evaluator.id}:${evaluatee.id}`)
-        ) {
-          suggestions.push({
-            evaluatorId: evaluator.id,
-            evaluateeId: evaluatee.id,
-            relationship: 'PEER',
-            reason: `${evaluatee.empName} PM과 같은 팀에서 협업하는 구성원`,
-          })
-        }
-        continue
-      }
-
-      const leadershipEvaluateeIds = getLeadershipEvaluateeIdsForEvaluator(evaluator, params.employees)
-      if (leadershipEvaluateeIds.has(evaluatee.id) && !existingPairKeys.has(`${evaluator.id}:${evaluatee.id}`)) {
-        const relationshipLevel =
-          evaluator.teamLeaderId === evaluatee.id
-            ? '팀장'
-            : evaluator.sectionChiefId === evaluatee.id
-              ? '실장'
-              : '본부장'
-        suggestions.push({
-          evaluatorId: evaluator.id,
-          evaluateeId: evaluatee.id,
-          relationship: 'SUBORDINATE',
-          reason: `${evaluator.empName}의 현재 ${relationshipLevel} 리더`,
-        })
-      }
-    }
-  }
-
-  return suggestions
-}
-
 // 상향평가 짝 규칙: 각자 업적평가 체인의 바로 위 평가자를 평가한다.
 // 체인 순서는 getEvaluationStageChain 과 같다(SELF 다음 FIRST → SECOND → FINAL, 평가자가 없는 단계는 체인에 없다).
 // CEO_ADJUST 는 FINAL 이 있어야 체인에 붙으므로 '바로 위'가 될 수 없다.
@@ -495,7 +436,8 @@ const UPWARD_CHAIN_STAGE_LABELS: Record<(typeof UPWARD_CHAIN_STAGES)[number], st
   FINAL: '최종',
 }
 
-export type UpwardChainStageEvaluator = { stage: string; evaluatorId: string; evaluatorStatus: string }
+// 업적평가와 같은 계산으로 정한 단계 평가자. 비활성 평가자를 대체할 기본 배정 평가자도 없으면 evaluatorId 가 null 이다.
+export type UpwardChainStageEvaluator = { stage: string; evaluatorId: string | null }
 
 export type UpwardUnpairedReason =
   | 'NO_UPPER_STAGE'
@@ -520,10 +462,10 @@ export function getUpwardTargetTypeForEvaluationRole(role: EvaluationRole): Upwa
 export function buildUpwardChainSuggestions(params: {
   // 평가자 후보: 라운드 사이클의 업적평가 대상(selectEvaluationTargets)
   candidates: Array<{ id: string; empName: string }>
-  // 후보별 업적평가 단계 평가자(배정 행 우선, 없으면 기본 배정)
+  // 후보별 업적평가 단계 평가자(배정 행 우선, 비활성 평가자는 기본 배정으로 대체, 행이 없으면 기본 배정)
   stageEvaluatorsByCandidate: Map<string, UpwardChainStageEvaluator[]>
   // 사이클 조직의 재직자. 짝의 대상(리더)은 여기서 찾는다.
-  employeesById: Map<string, { id: string; empName: string; role: EvaluationRole; jobTitle?: string | null }>
+  employeesById: Map<string, { id: string; empName: string; role: EvaluationRole; jobTitle?: string | null; status?: string }>
   targetTypes: UpwardTargetType[]
   minRaters: number
   evaluateeId?: string | null
@@ -547,12 +489,12 @@ export function buildUpwardChainSuggestions(params: {
     }
     const stage = upper.stage as (typeof UPWARD_CHAIN_STAGES)[number]
     const stageLabel = UPWARD_CHAIN_STAGE_LABELS[stage]
-    // 바로 위 단계의 평가자가 없거나 비활성이면 다음 단계로 넘기지 않는다.
-    if (upper.evaluatorStatus !== 'ACTIVE') {
-      markUnpaired('EVALUATOR_INACTIVE', `업적평가 ${stageLabel} 평가자가 비활성입니다.`)
+    // 바로 위 단계의 평가자가 (기본 배정으로 대체해도) 없거나 비활성이면 다음 단계로 넘기지 않는다.
+    const evaluatee = upper.evaluatorId ? params.employeesById.get(upper.evaluatorId) : undefined
+    if (!upper.evaluatorId || (evaluatee?.status && evaluatee.status !== 'ACTIVE')) {
+      markUnpaired('EVALUATOR_INACTIVE', `업적평가 ${stageLabel} 평가자가 비활성이고 대체할 기본 배정 평가자도 없습니다.`)
       continue
     }
-    const evaluatee = params.employeesById.get(upper.evaluatorId)
     if (!evaluatee) {
       markUnpaired('EVALUATOR_NOT_FOUND', `업적평가 ${stageLabel} 평가자를 이 조직의 재직자에서 찾을 수 없습니다.`)
       continue

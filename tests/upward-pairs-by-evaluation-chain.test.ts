@@ -37,6 +37,8 @@ const DEPARTMENTS = [
   { id: 'dept-team', deptName: '팀', parentDeptId: 'dept-sec', leaderEmployeeId: 'emp-tl', orgId: ORG },
   { id: 'dept-team2', deptName: '팀2', parentDeptId: 'dept-div', leaderEmployeeId: 'emp-tl2', orgId: ORG },
   { id: 'dept-team3', deptName: '팀3', parentDeptId: 'dept-div', leaderEmployeeId: 'emp-adminlead', orgId: ORG },
+  // 장도 상위 부서도 없는 부서(기본 배정의 1차 · 2차 평가자가 없다)
+  { id: 'dept-orphan', deptName: '독립 파트', parentDeptId: null, leaderEmployeeId: null, orgId: ORG },
   // 다른 조직
   { id: 'dept-x', deptName: '다른 조직', parentDeptId: null, leaderEmployeeId: null, orgId: 'org-2' },
 ]
@@ -76,8 +78,10 @@ const EMPLOYEES: EmployeeRow[] = [
   // 팀원2: 배정 행 없음 → 기본 배정
   person('emp-m2', '팀원2', 'ROLE_MEMBER', 'dept-team', { teamLeaderId: 'emp-tl' }),
   person('emp-m3', '팀원3', 'ROLE_MEMBER', 'dept-team3', { teamLeaderId: 'emp-adminlead' }),
-  // 팀원4: 배정 행의 1차 평가자가 퇴사자 → 2차(실장)로 넘기지 않고 짝 없음
+  // 팀원4: 배정 행의 1차 평가자가 퇴사자 → 실제 업적평가처럼 기본 배정의 1차(팀장)로 대체
   person('emp-m4', '팀원4', 'ROLE_MEMBER', 'dept-team', { teamLeaderId: 'emp-tl' }),
+  // 팀원6: 배정 행의 1차 평가자가 퇴사자이고 기본 배정에도 1차가 없다 → 2차(실장)로 넘기지 않고 짝 없음
+  person('emp-m6', '팀원6', 'ROLE_MEMBER', 'dept-orphan', { teamLeaderId: 'emp-tl' }),
   // 팀원5: 배정 행이 대표 확정 단계뿐 → 체인에 상위 평가자 없음
   person('emp-m5', '팀원5', 'ROLE_MEMBER', 'dept-team', { teamLeaderId: 'emp-tl' }),
   // 업적평가 대상이 아닌 사람: 퇴사자 · 다른 조직
@@ -94,6 +98,8 @@ const ASSIGNMENT_ROWS = [
   { targetId: 'emp-m1', evalStage: 'SECOND', evaluatorId: 'emp-sec' },
   { targetId: 'emp-m4', evalStage: 'FIRST', evaluatorId: 'emp-gone' },
   { targetId: 'emp-m4', evalStage: 'SECOND', evaluatorId: 'emp-sec' },
+  { targetId: 'emp-m6', evalStage: 'FIRST', evaluatorId: 'emp-gone' },
+  { targetId: 'emp-m6', evalStage: 'SECOND', evaluatorId: 'emp-sec' },
   { targetId: 'emp-m5', evalStage: 'CEO_ADJUST', evaluatorId: 'emp-ceo' },
   { targetId: 'emp-admin', evalStage: 'CEO_ADJUST', evaluatorId: 'emp-ceo' },
 ]
@@ -147,10 +153,27 @@ const fakeDb = guardedDb({
       })),
   },
   evaluationAssignment: {
-    findMany: async (args: { where: { evalCycleId: string; targetId?: { in?: string[] } } }) =>
-      ASSIGNMENT_ROWS.filter(
-        (row) => args.where.evalCycleId === 'cycle-1' && (!args.where.targetId?.in || args.where.targetId.in.includes(row.targetId))
-      ).map((row) => ({ ...row, evaluator: { status: employeeById.get(row.evaluatorId)?.status ?? 'RESIGNED' } })),
+    // 추천(여러 대상: targetId.in)과 업적평가 체인(한 대상: targetId 문자열) 둘 다 받는다.
+    findMany: async (args: { where: { evalCycleId: string; targetId?: string | { in?: string[] } } }) =>
+      ASSIGNMENT_ROWS.filter((row) => {
+        const target = args.where.targetId
+        const matches = typeof target === 'string' ? row.targetId === target : !target?.in || target.in.includes(row.targetId)
+        return args.where.evalCycleId === 'cycle-1' && matches
+      }).map((row) => {
+        const evaluator = employeeById.get(row.evaluatorId)
+        return {
+          ...row,
+          evaluator: {
+            id: row.evaluatorId,
+            empName: evaluator?.empName ?? row.evaluatorId,
+            role: evaluator?.role ?? 'ROLE_MEMBER',
+            position: 'MEMBER',
+            jobTitle: evaluator?.jobTitle ?? null,
+            status: evaluator?.status ?? 'RESIGNED',
+            department: { deptName: evaluator ? departmentOf(evaluator.deptId).deptName : '-' },
+          },
+        }
+      }),
   },
   feedbackAdminGroupMember: { findMany: async () => [] },
   multiFeedbackRound: {
@@ -195,6 +218,7 @@ type SuggestResult = {
 
 async function main() {
   const adminRoute = await import('../src/app/api/feedback/upward/admin/route')
+  const { getEvaluationStageChain } = await import('../src/server/evaluation-performance-assignments')
 
   // 추천 짝 추가(addSuggestedAssignments). 본 것 = 만들어진 짝 · 짝 없음 · minRaters 미만 표시
   const suggest = async (): Promise<SuggestResult> => {
@@ -252,17 +276,18 @@ async function main() {
     )
   })
 
-  await run("ⓔ 배정 행이 없으면 buildDefaultAssignmentRecords 결과를 따른다. 첫 단계 평가자가 없거나 비활성이면 '짝 없음'으로 돌려준다", async () => {
+  await run("ⓔ 배정 행이 없으면 기본 배정 결과를 따른다. 평가자를 정하지 못하면 '짝 없음'으로 돌려준다", async () => {
     const result = await suggest()
     assert.deepEqual(
       {
         m2: pairsOf(result, 'emp-m2'),
-        m4: pairsOf(result, 'emp-m4'),
-        m4Reason: unpairedReason(result, 'emp-m4'),
+        // 1차가 퇴사자이고 기본 배정에도 1차가 없다: 2차(실장)로 넘기지 않는다.
+        m6: pairsOf(result, 'emp-m6'),
+        m6Reason: unpairedReason(result, 'emp-m6'),
         m5: pairsOf(result, 'emp-m5'),
         m5Reason: unpairedReason(result, 'emp-m5'),
       },
-      { m2: ['emp-m2->emp-tl'], m4: [], m4Reason: 'EVALUATOR_INACTIVE', m5: [], m5Reason: 'NO_UPPER_STAGE' }
+      { m2: ['emp-m2->emp-tl'], m6: [], m6Reason: 'EVALUATOR_INACTIVE', m5: [], m5Reason: 'NO_UPPER_STAGE' }
     )
   })
 
@@ -274,13 +299,31 @@ async function main() {
     )
   })
 
+  await run('ⓖ 배정 행의 평가자가 비활성이면 실제 업적평가와 같은 대체 평가자를 대상으로 한다', async () => {
+    const result = await suggest()
+    // 같은 fixture 로 업적평가 쪽 평가자 결정(getEvaluationStageChain)을 돌려 바로 위 평가자를 본다.
+    const chain = await getEvaluationStageChain({ db: fakeDb as never, evalCycleId: 'cycle-1', targetId: 'emp-m4' })
+    const evaluationUpper = chain.find((entry) => entry.stage !== 'SELF')
+    assert.deepEqual(
+      {
+        upward: pairsOf(result, 'emp-m4'),
+        evaluation: evaluationUpper ? `${evaluationUpper.stage}:${evaluationUpper.evaluatorId}` : null,
+      },
+      { upward: ['emp-m4->emp-tl'], evaluation: 'FIRST:emp-tl' }
+    )
+  })
+
   await run('보조: 대상(리더)별 평가자 수가 minRaters 미만이면 표시하고 짝은 만든다', async () => {
     const result = await suggest()
     const below = Object.fromEntries(result.belowMinRaters.map((item) => [item.evaluateeId, item.raterCount]))
     assert.deepEqual(
-      { tl: below['emp-tl'] ?? null, div: below['emp-div'] ?? null, tlPairsCreated: result.pairs.filter((pair) => pair.endsWith('->emp-tl')).length },
-      // 팀장: 팀원1 · 팀원2 = 2명 < 3. 본부장: 팀장2 · 관리자팀장 · 실장 = 3명.
-      { tl: 2, div: null, tlPairsCreated: 2 }
+      {
+        adminLead: below['emp-adminlead'] ?? null,
+        div: below['emp-div'] ?? null,
+        adminLeadPairsCreated: result.pairs.filter((pair) => pair.endsWith('->emp-adminlead')).length,
+      },
+      // 관리자팀장: 팀원3 = 1명 < 3 → 표시하고 짝은 만든다. 본부장: 팀장2 · 관리자팀장 · 실장 = 3명 → 표시하지 않는다.
+      { adminLead: 1, div: null, adminLeadPairsCreated: 1 }
     )
   })
 

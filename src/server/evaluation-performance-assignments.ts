@@ -428,34 +428,53 @@ async function loadStageAssigneeProfiles(
   )
 }
 
-// 비활성 평가자 행의 단계들을 기본 배정의 평가자로 대체할 프로필. 단계가 없으면 기본 배정을 계산하지 않는다.
-async function loadReplacementProfiles(
-  db: AssignmentDbClient,
-  targetId: string,
-  stages: EvalStage[]
-) {
-  const replacements = new Map<EvalStage, StageAssigneeProfile>()
-  if (!stages.length) {
-    return replacements
-  }
+type PersistedStageRow = { evalStage: EvalStage; evaluatorId: string; evaluatorActive: boolean }
 
-  const defaults = await buildDefaultAssignmentRecords(db)
-  const evaluatorIdByStage = new Map<EvalStage, string>()
+export type ResolvedStageEvaluator = {
+  stage: AssignableEvalStage
+  // 비활성 평가자의 행인데 기본 배정에도 평가자가 없으면 null 이다.
+  evaluatorId: string | null
+  source: 'ASSIGNMENT' | 'REPLACEMENT' | 'DEFAULT'
+}
+
+// 기본 배정이 필요한 경우: 배정 행이 하나도 없거나, 평가자가 비활성인 행이 있을 때.
+function needsDefaultAssignment(rows: PersistedStageRow[]) {
+  return rows.length === 0 || rows.some((row) => !row.evaluatorActive)
+}
+
+function groupDefaultEvaluatorIdsByTarget(defaults: DefaultAssignmentRecord[]) {
+  const byTarget = new Map<string, Map<EvalStage, string>>()
   for (const item of defaults) {
-    if (item.targetId === targetId && item.evaluatorId && stages.includes(item.evalStage)) {
-      evaluatorIdByStage.set(item.evalStage, item.evaluatorId)
-    }
+    if (!item.evaluatorId) continue
+    const current = byTarget.get(item.targetId) ?? new Map<EvalStage, string>()
+    current.set(item.evalStage, item.evaluatorId)
+    byTarget.set(item.targetId, current)
+  }
+  return byTarget
+}
+
+// 실제 업적평가의 단계별 평가자 결정. loadRuntimeStageAssignments 와 loadStageEvaluatorsForTargets 가 함께 쓴다.
+// 배정 행이 하나라도 있으면 행만 쓴다(행 없는 단계는 체인에 없다). 평가자가 비활성인 행은 그 단계의 기본 배정 평가자로
+// 대체하고, 기본 배정에도 없으면 평가자 없음(null)이다. 행이 하나도 없는 대상은 기본 배정을 쓴다.
+function resolveStageEvaluators(
+  rows: PersistedStageRow[],
+  defaultEvaluatorIdByStage: ReadonlyMap<EvalStage, string>
+): ResolvedStageEvaluator[] {
+  if (!rows.length) {
+    return PERFORMANCE_ASSIGNABLE_STAGES.flatMap((stage): ResolvedStageEvaluator[] => {
+      const evaluatorId = defaultEvaluatorIdByStage.get(stage)
+      return evaluatorId ? [{ stage: stage as AssignableEvalStage, evaluatorId, source: 'DEFAULT' }] : []
+    })
   }
 
-  const profiles = await loadStageAssigneeProfiles(db, [...new Set(evaluatorIdByStage.values())])
-  for (const [stage, evaluatorId] of evaluatorIdByStage) {
-    const profile = profiles.get(evaluatorId)
-    if (profile) {
-      replacements.set(stage, profile)
-    }
-  }
-
-  return replacements
+  const rowByStage = new Map(rows.map((row) => [row.evalStage, row]))
+  return PERFORMANCE_ASSIGNABLE_STAGES.flatMap((stage): ResolvedStageEvaluator[] => {
+    const row = rowByStage.get(stage)
+    if (!row) return []
+    if (row.evaluatorActive) return [{ stage: stage as AssignableEvalStage, evaluatorId: row.evaluatorId, source: 'ASSIGNMENT' }]
+    const replacementId = defaultEvaluatorIdByStage.get(stage) ?? null
+    return [{ stage: stage as AssignableEvalStage, evaluatorId: replacementId, source: 'REPLACEMENT' }]
+  })
 }
 
 async function loadRuntimeStageAssignments(params: {
@@ -492,75 +511,48 @@ async function loadRuntimeStageAssignments(params: {
     },
   })
 
-  // 배정 행이 하나라도 있으면 행만 쓴다. 행 없는 단계는 건너뛴다(평가자 없음).
-  // 평가자가 비활성인 행만 그 단계를 기본 배정의 평가자로 채운다. 기본 배정에도 없으면 빈다.
-  if (persistedAssignments.length > 0) {
-    const persistedMap = new Map(
-      persistedAssignments.map((assignment) => [assignment.evalStage, assignment])
-    )
-    const inactiveStages = persistedAssignments
-      .filter((assignment) => assignment.evaluator?.status !== 'ACTIVE')
-      .map((assignment) => assignment.evalStage)
-    const replacementProfiles = await loadReplacementProfiles(db, targetId, inactiveStages)
+  // 평가자 결정은 resolveStageEvaluators 하나다(배정 행 우선, 비활성 행은 기본 배정으로 대체, 행이 없으면 기본 배정).
+  // 기본 배정은 필요할 때만 계산한다. sync 가 행을 쓰는 것과 같은 계산이다.
+  const rows: PersistedStageRow[] = persistedAssignments.map((assignment) => ({
+    evalStage: assignment.evalStage,
+    evaluatorId: assignment.evaluatorId,
+    evaluatorActive: assignment.evaluator?.status === 'ACTIVE',
+  }))
+  const defaultEvaluatorIdByStage = needsDefaultAssignment(rows)
+    ? groupDefaultEvaluatorIdsByTarget(await buildDefaultAssignmentRecords(db)).get(targetId) ?? new Map<EvalStage, string>()
+    : new Map<EvalStage, string>()
+  const resolved = new Map(resolveStageEvaluators(rows, defaultEvaluatorIdByStage).map((entry) => [entry.stage, entry]))
 
-    const assignments = PERFORMANCE_ASSIGNABLE_STAGES.map((stage) => {
-      const persisted = persistedMap.get(stage)
-      if (persisted && persisted.evaluator?.status !== 'ACTIVE') {
-        const replacement = replacementProfiles.get(stage) ?? null
-        return {
-          stage,
-          evaluatorId: replacement?.id ?? null,
-          evaluator: replacement,
-        } satisfies RuntimeStageAssignment
-      }
-
-      if (persisted?.evaluator?.status === 'ACTIVE') {
-        return {
-          stage,
-          evaluatorId: persisted.evaluatorId,
-          evaluator: {
-            id: persisted.evaluator.id,
-            empName: persisted.evaluator.empName,
-            role: persisted.evaluator.role,
-            position: persisted.evaluator.position,
-            departmentName: persisted.evaluator.department.deptName,
-            jobTitle: persisted.evaluator.jobTitle,
-          } satisfies StageAssigneeProfile,
-        } satisfies RuntimeStageAssignment
-      }
-
-      return { stage, evaluatorId: null, evaluator: null } satisfies RuntimeStageAssignment
-    })
-
-    return { target, assignments }
-  }
-
-  // 행이 하나도 없는 대상만 기본 배정을 계산한다. sync 가 행을 쓰는 것과 같은 계산이다.
-  const defaults = await buildDefaultAssignmentRecords(db)
-  const defaultEvaluatorIdByStage = new Map(
-    defaults
-      .filter((item) => item.targetId === targetId)
-      .map((item) => [item.evalStage, item.evaluatorId] as const)
-  )
-  const defaultEvaluatorIds = PERFORMANCE_ASSIGNABLE_STAGES.map(
-    (stage) => defaultEvaluatorIdByStage.get(stage) ?? null
-  ).filter((value): value is string => Boolean(value))
-  const defaultProfiles = await loadStageAssigneeProfiles(db, defaultEvaluatorIds)
+  // 대체 · 기본 배정 평가자는 ACTIVE 프로필로 확인한다. 배정 행의 ACTIVE 평가자는 행의 프로필을 그대로 쓴다.
+  const profileIds = [...resolved.values()]
+    .filter((entry) => entry.source !== 'ASSIGNMENT' && entry.evaluatorId)
+    .map((entry) => entry.evaluatorId as string)
+  const profiles = await loadStageAssigneeProfiles(db, [...new Set(profileIds)])
+  const persistedMap = new Map(persistedAssignments.map((assignment) => [assignment.evalStage, assignment]))
 
   const assignments = PERFORMANCE_ASSIGNABLE_STAGES.map((stage) => {
-    const evaluatorId = defaultEvaluatorIdByStage.get(stage) ?? null
-    const evaluator = evaluatorId ? defaultProfiles.get(evaluatorId) ?? null : null
-    return {
-      stage,
-      evaluatorId: evaluator?.id ?? null,
-      evaluator,
-    } satisfies RuntimeStageAssignment
+    const entry = resolved.get(stage as AssignableEvalStage)
+    const persisted = persistedMap.get(stage)
+    if (entry?.source === 'ASSIGNMENT' && persisted?.evaluator) {
+      return {
+        stage,
+        evaluatorId: persisted.evaluatorId,
+        evaluator: {
+          id: persisted.evaluator.id,
+          empName: persisted.evaluator.empName,
+          role: persisted.evaluator.role,
+          position: persisted.evaluator.position,
+          departmentName: persisted.evaluator.department.deptName,
+          jobTitle: persisted.evaluator.jobTitle,
+        } satisfies StageAssigneeProfile,
+      } satisfies RuntimeStageAssignment
+    }
+
+    const evaluator = entry?.evaluatorId ? profiles.get(entry.evaluatorId) ?? null : null
+    return { stage, evaluatorId: evaluator?.id ?? null, evaluator } satisfies RuntimeStageAssignment
   })
 
-  return {
-    target,
-    assignments,
-  }
+  return { target, assignments }
 }
 
 export async function getEvaluationStageChain(params: {
@@ -762,27 +754,17 @@ async function buildDefaultAssignmentContext(db: AssignmentDbClient) {
   return { rows, employees, departments }
 }
 
-export type TargetStageEvaluator = {
-  stage: AssignableEvalStage
-  evaluatorId: string
-  // 배정 행의 평가자 상태. 기본 배정은 ACTIVE 직원만으로 계산하므로 ACTIVE 다.
-  evaluatorStatus: string
-}
-
-// 여러 대상자의 단계별 평가자를 한 번에 구한다. loadRuntimeStageAssignments 와 같은 규칙이다:
-// 배정 행이 하나라도 있는 대상은 그 행만 쓰고(행 없는 단계는 평가자 없음), 행이 하나도 없는 대상만 기본 배정을 쓴다.
-// 기본 배정(buildDefaultAssignmentRecords)은 호출당 한 번만 계산한다.
-// 비활성 평가자의 행은 그대로 돌려준다. 그 단계를 어떻게 다룰지는 호출하는 쪽이 정한다.
+// 여러 대상자의 단계별 평가자를 한 번에 구한다. 판정은 실제 업적평가(loadRuntimeStageAssignments)와 같은
+// resolveStageEvaluators 다. 배정 행은 한 번에 읽고, 기본 배정(buildDefaultAssignmentRecords)은 필요할 때 호출당 한 번만 계산한다.
 export async function loadStageEvaluatorsForTargets(params: {
   db?: AssignmentDbClient
   evalCycleId: string
   targetIds: string[]
 }) {
   const db = params.db ?? prisma
-  const result = new Map<string, { source: 'ASSIGNMENT' | 'DEFAULT'; stages: TargetStageEvaluator[] }>()
+  const result = new Map<string, { source: 'ASSIGNMENT' | 'DEFAULT'; stages: ResolvedStageEvaluator[] }>()
   if (!params.targetIds.length) return result
 
-  const stageOrder = (stage: EvalStage) => PERFORMANCE_ASSIGNABLE_STAGES.indexOf(stage)
   const rows = await db.evaluationAssignment.findMany({
     where: {
       evalCycleId: params.evalCycleId,
@@ -796,36 +778,25 @@ export async function loadStageEvaluatorsForTargets(params: {
       evaluator: { select: { status: true } },
     },
   })
+  const rowsByTarget = new Map<string, PersistedStageRow[]>()
   for (const row of rows) {
-    const current = result.get(row.targetId) ?? { source: 'ASSIGNMENT' as const, stages: [] }
-    current.stages.push({
-      stage: row.evalStage as AssignableEvalStage,
-      evaluatorId: row.evaluatorId,
-      evaluatorStatus: row.evaluator?.status ?? 'INACTIVE',
+    rowsByTarget.set(row.targetId, [
+      ...(rowsByTarget.get(row.targetId) ?? []),
+      { evalStage: row.evalStage, evaluatorId: row.evaluatorId, evaluatorActive: row.evaluator?.status === 'ACTIVE' },
+    ])
+  }
+
+  const needsDefaults = params.targetIds.some((targetId) => needsDefaultAssignment(rowsByTarget.get(targetId) ?? []))
+  const defaultsByTarget = needsDefaults
+    ? groupDefaultEvaluatorIdsByTarget(await buildDefaultAssignmentRecords(db))
+    : new Map<string, Map<EvalStage, string>>()
+
+  for (const targetId of params.targetIds) {
+    const targetRows = rowsByTarget.get(targetId) ?? []
+    result.set(targetId, {
+      source: targetRows.length ? 'ASSIGNMENT' : 'DEFAULT',
+      stages: resolveStageEvaluators(targetRows, defaultsByTarget.get(targetId) ?? new Map()),
     })
-    result.set(row.targetId, current)
-  }
-
-  const targetsWithoutRows = params.targetIds.filter((targetId) => !result.has(targetId))
-  if (targetsWithoutRows.length) {
-    const missing = new Set(targetsWithoutRows)
-    for (const record of await buildDefaultAssignmentRecords(db)) {
-      if (!missing.has(record.targetId) || !record.evaluatorId) continue
-      const current = result.get(record.targetId) ?? { source: 'DEFAULT' as const, stages: [] }
-      current.stages.push({
-        stage: record.evalStage as AssignableEvalStage,
-        evaluatorId: record.evaluatorId,
-        evaluatorStatus: 'ACTIVE',
-      })
-      result.set(record.targetId, current)
-    }
-    for (const targetId of targetsWithoutRows) {
-      if (!result.has(targetId)) result.set(targetId, { source: 'DEFAULT', stages: [] })
-    }
-  }
-
-  for (const entry of result.values()) {
-    entry.stages.sort((left, right) => stageOrder(left.stage) - stageOrder(right.stage))
   }
   return result
 }
@@ -907,28 +878,33 @@ export async function resolveEvaluationStageAssignee(params: {
     },
   })
 
-  // 평가자가 비활성인 행은 기본 배정의 평가자로 대체한다(행 없는 단계는 null).
-  if (persistedAssignments.length > 0) {
-    const persisted = persistedAssignments.find((assignment) => assignment.evalStage === params.evalStage)
-    if (!persisted) {
-      return null
-    }
-    if (persisted.evaluator.status === 'ACTIVE') {
-      return persisted.evaluatorId
-    }
-
-    const replacements = await loadReplacementProfiles(db, params.targetId, [params.evalStage])
-    return replacements.get(params.evalStage)?.id ?? null
+  // 평가자 결정은 resolveStageEvaluators 하나다. 평가자가 비활성인 행은 기본 배정의 평가자로 대체한다(행 없는 단계는 null).
+  // 기본 배정은 행이 없거나 이 단계의 행이 비활성일 때만 계산한다.
+  const rows: PersistedStageRow[] = persistedAssignments.map((assignment) => ({
+    evalStage: assignment.evalStage,
+    evaluatorId: assignment.evaluatorId,
+    evaluatorActive: assignment.evaluator.status === 'ACTIVE',
+  }))
+  const stageRow = rows.find((row) => row.evalStage === params.evalStage)
+  if (rows.length > 0 && !stageRow) {
+    return null
+  }
+  const defaultEvaluatorIdByStage =
+    !rows.length || !stageRow?.evaluatorActive
+      ? groupDefaultEvaluatorIdsByTarget(await buildDefaultAssignmentRecords(db)).get(params.targetId) ??
+        new Map<EvalStage, string>()
+      : new Map<EvalStage, string>()
+  const entry = resolveStageEvaluators(rows, defaultEvaluatorIdByStage).find((item) => item.stage === params.evalStage)
+  if (!entry?.evaluatorId) {
+    return null
+  }
+  if (entry.source !== 'REPLACEMENT') {
+    return entry.evaluatorId
   }
 
-  const defaults = await buildDefaultAssignmentRecords(db)
-  return (
-    defaults.find(
-      (item) =>
-        item.targetId === params.targetId &&
-        item.evalStage === params.evalStage
-    )?.evaluatorId ?? null
-  )
+  // 대체 평가자는 ACTIVE 프로필로 확인한다(loadRuntimeStageAssignments 와 같다).
+  const profiles = await loadStageAssigneeProfiles(db, [entry.evaluatorId])
+  return profiles.get(entry.evaluatorId)?.id ?? null
 }
 
 async function resolveDefaultEvaluationStageAssignee(params: {
