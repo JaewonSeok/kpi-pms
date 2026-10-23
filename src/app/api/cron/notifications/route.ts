@@ -19,11 +19,16 @@ export async function GET(request: Request) {
       throw new AppError(409, 'FEATURE_DISABLED', 'Notification scheduler is disabled by feature flag.')
     }
 
-    const validated = NotificationCronSchema.parse({})
+    // cron 은 실행 모드를 쿼리로 받는다(?mode=dispatch: 정기 리마인더 없이 대기 잡 발송만). 없으면 전체 실행, 모르는 모드는 400.
+    const modeParam = new URL(request.url).searchParams.get('mode')
+    const validated = NotificationCronSchema.safeParse(modeParam === null ? {} : { mode: modeParam })
+    if (!validated.success) {
+      throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0].message)
+    }
 
     const result = await runNotificationJob({
-      mode: validated.mode,
-      reminderTypes: validated.reminderTypes,
+      mode: validated.data.mode,
+      reminderTypes: validated.data.reminderTypes,
       triggerSource: session?.user.role === 'ROLE_ADMIN' ? 'admin-manual' : 'cron',
     })
 
