@@ -6,7 +6,6 @@ import { resolveMenuFromPath } from '../src/lib/auth/permissions'
 import { flattenNavigationItems, filterNavigationItemsByRole, NAV_ITEMS } from '../src/lib/navigation'
 import { resolveEmployeePositionLabel } from '../src/lib/employee-position-label'
 import {
-  buildUpwardSuggestions,
   canViewUpwardResults,
   DEFAULT_LEADERSHIP_DIAGNOSIS_QUESTIONS,
   getLeadershipEvaluateeIdsForEvaluator,
@@ -484,18 +483,6 @@ async function main() {
     assert.deepEqual(Array.from(getLeadershipEvaluateeIdsForEvaluator(employees[2], employees)), ['section-chief-1'])
     assert.deepEqual(Array.from(getLeadershipEvaluateeIdsForEvaluator(employees[3], employees)), ['division-head-1'])
     assert.deepEqual(Array.from(getLeadershipEvaluateeIdsForEvaluator(employees[4], employees)), ['division-head-1'])
-
-    const suggestions = buildUpwardSuggestions({
-      employees,
-      targetTypes: ['TEAM_LEADER', 'SECTION_CHIEF', 'DIVISION_HEAD', 'PM'],
-    })
-    const pairs = suggestions.map((suggestion) => `${suggestion.evaluatorId}:${suggestion.evaluateeId}:${suggestion.relationship}`)
-
-    assert.equal(pairs.includes('member-1:team-leader-1:SUBORDINATE'), true)
-    assert.equal(pairs.includes('member-1:pm-1:PEER'), true)
-    assert.equal(pairs.includes('team-leader-1:section-chief-1:SUBORDINATE'), true)
-    assert.equal(pairs.includes('team-leader-no-section:division-head-1:SUBORDINATE'), true)
-    assert.equal(pairs.includes('section-chief-1:division-head-1:SUBORDINATE'), true)
   })
 
   await run('upward results aggregation groups rating and text answers', () => {

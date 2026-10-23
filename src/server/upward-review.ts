@@ -12,7 +12,6 @@ import { resolveEmployeePositionLabel } from '@/lib/employee-position-label'
 import { prisma } from '@/lib/prisma'
 import { formatDate } from '@/lib/utils'
 import {
-  buildUpwardSuggestions,
   canViewUpwardResults,
   isUpwardResultViewer,
   getLeadershipResultViewerIds,
@@ -27,6 +26,7 @@ import {
   type UpwardDirectoryEmployee,
 } from '@/lib/upward-review'
 import { getCollaboratorRoundIds, getFeedbackReviewAdminAccess } from './feedback-360-access'
+import { buildUpwardRoundPairSuggestions } from './upward-review-pairs'
 
 export type UpwardReviewRouteMode = 'overview' | 'admin' | 'respond' | 'results'
 export type UpwardReviewPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
@@ -211,7 +211,11 @@ export type UpwardReviewPageData = {
       evaluateeName: string
       relationship: RaterRelationship
       reason: string
+      // 대상(리더)의 평가자 수(이미 있는 짝 + 추천)가 minRaters 미만
+      belowMinRaters: boolean
     }>
+    // 추천 짝을 만들지 못한 평가자와 사유
+    unpairedEvaluators: Array<{ evaluatorId: string; evaluatorName: string; reasonLabel: string }>
   }
   results?: {
     roundId: string
@@ -856,6 +860,7 @@ export async function getUpwardReviewPageData(
           position: true,
           deptId: true,
           jobTitle: true,
+          status: true,
           teamName: true,
           teamLeaderId: true,
           sectionChiefId: true,
@@ -867,17 +872,16 @@ export async function getUpwardReviewPageData(
     ])
 
     const employeeDirectory = employeeDirectoryRows.map((employeeRow) => buildDirectoryEmployee(employeeRow))
-    const suggestionRows =
+    // 추천 짝은 업적평가 체인의 바로 위 평가자다(직원 슬롯이 아니라 업적평가 배정을 따른다).
+    const pairSuggestions =
       selectedRound && selectedRoundSettings
-        ? buildUpwardSuggestions({
-            employees: employeeDirectory,
-            targetTypes: selectedRoundSettings.targetTypes,
-            existingPairs: selectedRound.feedbacks.map((feedback) => ({
-              evaluatorId: feedback.giverId,
-              evaluateeId: feedback.receiverId,
-            })),
-          }).slice(0, 80)
-        : []
+        ? await buildUpwardRoundPairSuggestions({
+            orgId: employee.department.orgId,
+            round: selectedRound,
+            employees: employeeDirectoryRows,
+          })
+        : { suggestions: [], unpaired: [], belowMinRaters: [] }
+    const suggestionRows = pairSuggestions.suggestions.slice(0, 80)
 
     return {
       ...baseData,
@@ -985,6 +989,12 @@ export async function getUpwardReviewPageData(
           evaluateeName: employeeDirectory.find((item) => item.id === suggestion.evaluateeId)?.empName ?? '알 수 없음',
           relationship: suggestion.relationship,
           reason: suggestion.reason,
+          belowMinRaters: suggestion.belowMinRaters,
+        })),
+        unpairedEvaluators: pairSuggestions.unpaired.map((item) => ({
+          evaluatorId: item.evaluatorId,
+          evaluatorName: item.evaluatorName,
+          reasonLabel: item.reasonLabel,
         })),
       },
     }
