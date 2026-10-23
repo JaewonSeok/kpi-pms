@@ -60,7 +60,16 @@ type QueueNotificationInput = {
   subjectOverride?: string
   bodyOverride?: string
   linkOverride?: string
+  // 수신자가 대표일 때 대표가 이 알림을 어떤 자격으로 받는가(resolveNotificationRecipients). 없으면 대표에게 보내지 않는다.
+  ceoCapacity?: CeoRecipientCapacity
+  // 배치 호출이 한 번 조회한 대표 집합. 없으면 호출마다 조회한다.
+  ceoRecipientIds?: ReadonlySet<string>
 }
+
+// 대표가 다른 사람의 평가 · 보정 · 확정 · 승인을 하는 사람으로 받는 알림. HR 수신자가 대신 받는다.
+export type CeoRecipientCapacity = 'ACTS_AS_EVALUATOR'
+
+export const CEO_SUBSTITUTE_TITLE_PREFIX = '[대표 대신] '
 
 type QueueNotificationResult = {
   created: number
@@ -449,12 +458,81 @@ function resolveAllowlistSuppressReason(recipientEmail: string | null | undefine
   return null
 }
 
-async function getCeoRecipientIds(db: PrismaClient): Promise<Set<string>> {
+// 직원을 읽을 수 있는 클라이언트(PrismaClient · 트랜잭션 클라이언트 모두).
+type EmployeeReaderDb = Pick<Prisma.TransactionClient, 'employee'>
+
+export async function getCeoRecipientIds(db: EmployeeReaderDb): Promise<Set<string>> {
   const employees = await db.employee.findMany({
     where: { role: 'ROLE_CEO', status: 'ACTIVE' },
     select: { id: true },
   })
   return new Set(employees.map((employee) => employee.id))
+}
+
+// 대표 대신 받을 HR 수신자: env CEO_SUBSTITUTE_EMAILS(쉼표 구분 gwsEmail)의 ACTIVE 직원. 비었거나 못 찾으면 없다.
+async function getCeoSubstituteRecipientIds(db: EmployeeReaderDb, ceoIds: ReadonlySet<string>) {
+  const emails = (process.env.CEO_SUBSTITUTE_EMAILS ?? '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+  if (!emails.length) return []
+
+  const employees = await db.employee.findMany({
+    where: { gwsEmail: { in: emails, mode: 'insensitive' }, status: 'ACTIVE' },
+    select: { id: true },
+  })
+  return employees.map((employee) => employee.id).filter((id) => !ceoIds.has(id))
+}
+
+export type NotificationRecipientTarget = {
+  // 실제로 받는 사람
+  recipientId: string
+  // idempotencyKey 를 만들 때 쓰는 원래 수신자. 대신 보낸 알림이면 대표다.
+  keyRecipientId: string
+  titlePrefix: string
+}
+
+// 알림 수신자를 정하는 단일 지점. queueNotification(전 채널)과 직접 생성(createDirectNotifications)이 모두 거친다.
+// 수신자가 대표면: 다른 사람의 평가 · 보정 · 확정 · 승인을 하는 사람으로 받는 알림(ACTS_AS_EVALUATOR)은 HR 수신자가
+// '[대표 대신] ' 제목으로 대신 받고, 그 밖의 알림은 아무에게도 보내지 않는다(자격을 지정하지 않으면 보내지 않는다).
+// 대표 조회가 실패하면 그대로 던진다. 빈 집합으로 넘어가 대표 앞 알림이 만들어지지 않게 한다.
+export async function resolveNotificationRecipients(
+  db: EmployeeReaderDb,
+  params: { recipientId: string; ceoCapacity?: CeoRecipientCapacity; ceoRecipientIds?: ReadonlySet<string> }
+): Promise<NotificationRecipientTarget[]> {
+  const ceoIds = params.ceoRecipientIds ?? (await getCeoRecipientIds(db))
+  if (!ceoIds.has(params.recipientId)) {
+    return [{ recipientId: params.recipientId, keyRecipientId: params.recipientId, titlePrefix: '' }]
+  }
+  if (params.ceoCapacity !== 'ACTS_AS_EVALUATOR') return []
+
+  const substituteIds = await getCeoSubstituteRecipientIds(db, ceoIds)
+  return substituteIds.map((substituteId) => ({
+    recipientId: substituteId,
+    keyRecipientId: params.recipientId,
+    titlePrefix: CEO_SUBSTITUTE_TITLE_PREFIX,
+  }))
+}
+
+// queueNotification 을 거치지 않고 알림 행만 만드는 곳(체크인 · 평가 반려 · 다음 단계 배정)도 수신자 결정은 같은 헬퍼를 거친다.
+export async function createDirectNotifications(
+  db: Pick<Prisma.TransactionClient, 'employee' | 'notification'>,
+  params: {
+    recipientId: string
+    ceoCapacity?: CeoRecipientCapacity
+    data: Omit<Prisma.NotificationUncheckedCreateInput, 'recipientId'>
+  }
+) {
+  const targets = await resolveNotificationRecipients(db, {
+    recipientId: params.recipientId,
+    ceoCapacity: params.ceoCapacity,
+  })
+  for (const target of targets) {
+    await db.notification.create({
+      data: { ...params.data, recipientId: target.recipientId, title: `${target.titlePrefix}${params.data.title}` },
+    })
+  }
+  return targets.length
 }
 
 function getEmailTransport() {
@@ -771,14 +849,40 @@ export async function queueNotification(
   input: QueueNotificationInput,
   db: PrismaClient = prisma
 ): Promise<QueueNotificationResult> {
+  // 수신자는 resolveNotificationRecipients 가 정한다(대표면 HR 대신 · 안 보냄). 대표 조회가 실패하면 아무것도 만들지 않고 던진다.
+  const recipientParams = { recipientId: input.recipientId, ceoCapacity: input.ceoCapacity, ceoRecipientIds: input.ceoRecipientIds }
+  const targets = await resolveNotificationRecipients(db, recipientParams)
+  if (!targets.length) {
+    return { created: 0, suppressed: 1, duplicates: 0 }
+  }
+
+  const total: QueueNotificationResult = { created: 0, suppressed: 0, duplicates: 0 }
+  for (const target of targets) {
+    const result = await queueNotificationForTarget(input, target, db)
+    total.created += result.created
+    total.suppressed += result.suppressed
+    total.duplicates += result.duplicates
+  }
+  return total
+}
+
+async function queueNotificationForTarget(
+  input: QueueNotificationInput,
+  target: NotificationRecipientTarget,
+  db: PrismaClient
+): Promise<QueueNotificationResult> {
   await ensureDefaultNotificationTemplates(db)
+
+  // 대신 보낸 알림의 키는 원래 수신자(대표) 기준이다. 받는 사람이 여럿일 수 있어 받는 사람 id 를 덧붙인다.
+  const keyRecipientId = target.keyRecipientId
+  const keySuffix = keyRecipientId === target.recipientId ? '' : `:substitute:${target.recipientId}`
 
   const [recipient, preference] = await Promise.all([
     db.employee.findUnique({
-      where: { id: input.recipientId },
+      where: { id: target.recipientId },
       select: { id: true, empName: true, gwsEmail: true },
     }),
-    ensureNotificationPreference(input.recipientId, db),
+    ensureNotificationPreference(target.recipientId, db),
   ])
 
   if (!recipient) {
@@ -801,19 +905,19 @@ export async function queueNotification(
   for (const channel of requestedChannels) {
     const channelEnabled =
       channel === NotificationDeliveryChannel.IN_APP ? preference.inAppEnabled : preference.emailEnabled
-    const idempotencyKey = buildNotificationIdempotencyKey({
-      recipientId: input.recipientId,
+    const idempotencyKey = `${buildNotificationIdempotencyKey({
+      recipientId: keyRecipientId,
       type: input.type,
       channel,
       sourceType: input.sourceType,
       sourceId: input.sourceId,
       dedupeToken: input.dedupeToken,
-    })
+    })}${keySuffix}`
 
     if (!channelEnabled || mutedTypes.includes(input.type)) {
       try {
         await createNotificationJob(db, {
-          recipientId: input.recipientId,
+          recipientId: target.recipientId,
           type: input.type,
           templateCode: buildTemplateCode(input.type, channel),
           channel,
@@ -850,7 +954,7 @@ export async function queueNotification(
 
     if (channel === NotificationDeliveryChannel.EMAIL && preference.digestEnabled && template.isDigestCompatible) {
       availableAt = getNextDigestDispatchTime(scheduledFor, preference.timezone)
-      digestKey = `${input.recipientId}:${availableAt.toISOString().slice(0, 10)}`
+      digestKey = `${target.recipientId}:${availableAt.toISOString().slice(0, 10)}`
       isDigestMember = true
     }
 
@@ -865,9 +969,10 @@ export async function queueNotification(
         ? toAbsoluteNotificationLink(resolvedLink, getNotificationBaseUrl())
         : resolvedLink
 
-    const title = input.subjectOverride?.trim()
+    const renderedTitle = input.subjectOverride?.trim()
       ? renderTemplate(input.subjectOverride, { ...payload, link: renderedLink })
       : renderTemplate(template.subjectTemplate, { ...payload, link: renderedLink })
+    const title = `${target.titlePrefix}${renderedTitle}`
     const renderedMessage = input.bodyOverride?.trim()
       ? renderTemplate(input.bodyOverride, {
           ...payload,
@@ -888,7 +993,7 @@ export async function queueNotification(
 
     try {
       await createNotificationJob(db, {
-        recipientId: input.recipientId,
+        recipientId: target.recipientId,
         type: input.type,
         templateCode,
         channel,
@@ -1310,6 +1415,8 @@ export async function enqueueLifecycleReminders(
   const now = new Date()
   const reminderWindow = buildLifecycleReminderWindow(now)
   const oneDayLater = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+  // 대표 집합은 실행당 한 번 조회해 모든 queueNotification 에 넘긴다. 실패하면 아무 알림도 만들지 않고 던진다.
+  const ceoRecipientIds = await getCeoRecipientIds(db)
 
   const [activeEmployees, cycles, checkIns, pendingEvaluations, monthlyKpis] = await Promise.all([
     db.employee.findMany({
@@ -1388,6 +1495,7 @@ export async function enqueueLifecycleReminders(
               dueDate: formatDateTime(cycle.kpiSetupEnd),
               link: '/kpi/personal',
             },
+            ceoRecipientIds,
           },
           db
         )
@@ -1412,6 +1520,9 @@ export async function enqueueLifecycleReminders(
               cycleName: cycle.cycleName,
               link: '/evaluation/calibration',
             },
+            // 대표는 보정 · 확정을 하는 사람으로 받는다.
+            ceoCapacity: 'ACTS_AS_EVALUATOR',
+            ceoRecipientIds,
           },
           db
         )
@@ -1440,6 +1551,7 @@ export async function enqueueLifecycleReminders(
               cycleName: cycle.cycleName,
               link: '/evaluation/results',
             },
+            ceoRecipientIds,
           },
           db
         )
@@ -1505,6 +1617,7 @@ export async function enqueueLifecycleReminders(
             yearMonth,
             link: '/kpi/monthly',
           },
+          ceoRecipientIds,
         },
         db
       )
@@ -1545,6 +1658,9 @@ export async function enqueueLifecycleReminders(
           pendingCount: bucket.count,
           link: '/evaluation/results',
         },
+        // 대표는 다른 사람의 평가 · 확정을 하는 평가자로 받는다.
+        ceoCapacity: 'ACTS_AS_EVALUATOR',
+        ceoRecipientIds,
       },
       db
     )
@@ -1568,6 +1684,7 @@ export async function enqueueLifecycleReminders(
             link: '/checkin',
           },
           scheduledFor: checkIn.scheduledDate,
+          ceoRecipientIds,
         },
         db
       )

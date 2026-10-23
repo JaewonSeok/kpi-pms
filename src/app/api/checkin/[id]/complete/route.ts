@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { createDirectNotifications } from '@/lib/notification-service'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { CompleteCheckInSchema } from '@/lib/validations'
@@ -62,9 +63,9 @@ export async function PATCH(
     })
 
     if (data.nextCheckInDate) {
-      await prisma.notification.create({
+      await createDirectNotifications(prisma, {
+        recipientId: checkIn.ownerId,
         data: {
-          recipientId: checkIn.ownerId,
           type: 'CHECKIN_SCHEDULED',
           title: '다음 체크인 일정',
           message: `다음 체크인이 ${new Date(data.nextCheckInDate).toLocaleDateString('ko-KR')}으로 예약되었습니다.`,
@@ -86,9 +87,9 @@ export async function PATCH(
       })
 
       if (recentCheckIns.length > 0 && (recentCheckIns[0].energyLevel || 5) <= 2) {
-        await prisma.notification.create({
+        await createDirectNotifications(prisma, {
+          recipientId: checkIn.managerId,
           data: {
-            recipientId: checkIn.managerId,
             type: 'SYSTEM',
             title: '반복 낮은 에너지 감지',
             message: '최근 체크인에서 에너지 레벨 저하가 연속으로 감지되었습니다. 확인이 필요합니다.',

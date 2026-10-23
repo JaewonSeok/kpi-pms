@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { createDirectNotifications } from '@/lib/notification-service'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { CreateCheckInSchema } from '@/lib/validations'
@@ -110,9 +111,9 @@ export async function POST(request: Request) {
     })
 
     const recipientId = session.user.id === ownerId ? managerId : ownerId
-    await prisma.notification.create({
+    await createDirectNotifications(prisma, {
+      recipientId,
       data: {
-        recipientId,
         type: 'CHECKIN_SCHEDULED',
         title: '체크인 일정',
         message: `${new Date(data.scheduledDate).toLocaleDateString('ko-KR')} 체크인이 예약되었습니다.`,

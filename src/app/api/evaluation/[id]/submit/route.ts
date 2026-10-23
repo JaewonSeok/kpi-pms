@@ -3,6 +3,7 @@ import { resolveCarrierRecord } from '@/lib/resolve-carrier-record'
 import { getServerSession } from 'next-auth'
 import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { authOptions } from '@/lib/auth'
+import { createDirectNotifications } from '@/lib/notification-service'
 import { prisma } from '@/lib/prisma'
 import type { AuthSession } from '@/types/auth'
 import { SubmitEvaluationSchema } from '@/lib/validations'
@@ -512,9 +513,11 @@ async function createNextStageEvaluation(
     nextEvaluationId = created.id
   }
 
-  await tx.notification.create({
+  await createDirectNotifications(tx, {
+    recipientId: nextStageEntry.evaluatorId,
+    // 다음 단계 평가 · 확정을 할 사람으로 받는다.
+    ceoCapacity: 'ACTS_AS_EVALUATOR',
     data: {
-      recipientId: nextStageEntry.evaluatorId,
       type: 'EVAL_RECEIVED',
       title: '새 평가가 배정되었습니다.',
       message: `${target.empName}님의 ${nextStageEntry.stageLabel} 대상 평가가 할당되었습니다.`,

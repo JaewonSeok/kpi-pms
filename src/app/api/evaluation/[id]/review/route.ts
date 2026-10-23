@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { authOptions } from '@/lib/auth'
+import { createDirectNotifications } from '@/lib/notification-service'
 import { prisma } from '@/lib/prisma'
 import type { AuthSession } from '@/types/auth'
 import { RejectEvaluationSchema } from '@/lib/validations'
@@ -147,9 +148,11 @@ export async function PATCH(
         },
       })
 
-      await tx.notification.create({
+      await createDirectNotifications(tx, {
+        recipientId: previousEvaluation.evaluatorId,
+        // 반려된 단계를 다시 평가할 사람으로 받는다.
+        ceoCapacity: 'ACTS_AS_EVALUATOR',
         data: {
-          recipientId: previousEvaluation.evaluatorId,
           type: 'EVAL_REJECTED',
           title: '평가 보완 요청이 도착했습니다.',
           message: `${evaluation.target.empName}님의 평가가 반려되어 이전 단계에서 다시 보완해야 합니다.`,
