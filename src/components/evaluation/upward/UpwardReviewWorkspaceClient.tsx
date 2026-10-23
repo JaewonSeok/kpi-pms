@@ -21,6 +21,7 @@ import { Feedback360Avatar } from '../feedback360/ppt/Feedback360Avatar'
 import { LeadershipDiagnosisAiCoachingPanel } from './LeadershipDiagnosisAiCoachingPanel'
 import { LeadershipDiagnosisOpsDashboard } from './LeadershipDiagnosisOpsDashboard'
 import { UpwardRoundStatusButton } from './UpwardRoundStatusButton'
+import { describeRoundNotificationOutcome, sendUpwardLeadershipReminders } from '@/lib/round-notification-batches'
 import {
   buildLeadershipDiagnosisCategorySummaries,
   getLeadershipDiagnosisDevelopmentCategories,
@@ -622,6 +623,9 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
   const [, startTransition] = useTransition()
   const [notice, setNotice] = useState<Notice>(null)
   const [busyKey, setBusyKey] = useState<string | null>(null)
+  // 미제출자 메일 발송: 진행 중 묶음 번호, 실패했을 때 다시 보낼 대상과 시작 묶음
+  const [leadershipReminderProgress, setLeadershipReminderProgress] = useState<string | null>(null)
+  const [leadershipReminderRetry, setLeadershipReminderRetry] = useState<{ targetIds: string[]; startBatchIndex: number } | null>(null)
   const [openLeadershipCategory, setOpenLeadershipCategory] = useState(LEADERSHIP_DEFAULT_CATEGORIES[0])
 
   const adminData = props.data.admin
@@ -1114,15 +1118,19 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
     }
   }
 
-  async function handleSendLeadershipReminder() {
+  // 미제출자 메일 발송: 100명이 넘으면 100명씩 나눠 차례로 보낸다(sendUpwardLeadershipReminders).
+  // retry 가 있으면 실패한 묶음부터 다시 보낸다.
+  async function handleSendLeadershipReminder(retry?: { targetIds: string[]; startBatchIndex: number }) {
     if (!adminData?.selectedRound) return
-    const targetIds = Array.from(
-      new Set(
-        adminData.selectedRound.assignments
-          .filter((assignment) => assignment.status !== 'SUBMITTED')
-          .map((assignment) => assignment.evaluatorId)
+    const targetIds =
+      retry?.targetIds ??
+      Array.from(
+        new Set(
+          adminData.selectedRound.assignments
+            .filter((assignment) => assignment.status !== 'SUBMITTED')
+            .map((assignment) => assignment.evaluatorId)
+        )
       )
-    )
 
     if (!targetIds.length) {
       setNotice({ tone: 'success', message: '메일을 보낼 미제출자가 없습니다.' })
@@ -1132,34 +1140,35 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
     setBusyKey('sendLeadershipReminder')
     setNotice(null)
     try {
-      const result = await readApiBody(
-        await fetch(`/api/feedback/rounds/${encodeURIComponent(adminData.selectedRound.id)}/notifications`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'send-review-reminder',
-            roundId: adminData.selectedRound.id,
-            targetIds,
-            subject: `[리더십 진단] ${adminData.selectedRound.roundName} 응답 요청`,
-            body: `
-              <p>안녕하세요.</p>
-              <p>${adminData.selectedRound.roundName} 리더십 진단 응답이 배정되었습니다.</p>
-              <p>기한 내 리더십 진단 화면에서 응답을 작성해 주세요.</p>
-            `,
-          }),
-        })
-      )
-
-      setNotice({
-        tone: 'success',
-        message: String(result.message ?? '리더십 진단 메일 발송을 예약했습니다.'),
+      const outcome = await sendUpwardLeadershipReminders({
+        round: { id: adminData.selectedRound.id, roundName: adminData.selectedRound.roundName },
+        targetIds,
+        startBatchIndex: retry?.startBatchIndex,
+        onProgress: (current, total) => setLeadershipReminderProgress(total > 1 ? `${current}/${total} 묶음 보내는 중` : null),
+        post: async (url, body) =>
+          readApiBody(
+            await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            })
+          ),
       })
+
+      if (outcome.failedBatchIndex !== null) {
+        setLeadershipReminderRetry({ targetIds, startBatchIndex: outcome.failedBatchIndex })
+        setNotice({ tone: 'error', message: `${outcome.errorMessage ?? '발송에 실패했습니다.'} ${describeRoundNotificationOutcome(outcome)}` })
+      } else {
+        setLeadershipReminderRetry(null)
+        setNotice({ tone: 'success', message: describeRoundNotificationOutcome(outcome) })
+      }
     } catch (error) {
       setNotice({
         tone: 'error',
         message: error instanceof Error ? error.message : '리더십 진단 메일 발송에 실패했습니다.',
       })
     } finally {
+      setLeadershipReminderProgress(null)
       setBusyKey(null)
     }
   }
@@ -2438,10 +2447,15 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                   <button type="button" className={secondaryButtonClassName} disabled={busyKey != null} onClick={async () => { const result = await runAdminAction('setRelease', { roundId: adminData.selectedRound?.id, released: !adminData.selectedRound?.released }); if (!result) return; startTransition(() => router.refresh()) }}>
                     {adminData.selectedRound.released ? '결과 비공개 전환' : '결과 공개'}
                   </button>
-                  <button type="button" className={secondaryButtonClassName} disabled={busyKey != null} onClick={handleSendLeadershipReminder}>
+                  <button type="button" className={secondaryButtonClassName} disabled={busyKey != null} onClick={() => void handleSendLeadershipReminder()}>
                     <Mail className="mr-2 h-4 w-4" />
-                    {busyKey === 'sendLeadershipReminder' ? '메일 예약 중...' : '미제출자 메일 발송'}
+                    {busyKey === 'sendLeadershipReminder' ? leadershipReminderProgress ?? '메일 예약 중...' : '미제출자 메일 발송'}
                   </button>
+                  {leadershipReminderRetry && busyKey == null ? (
+                    <button type="button" className={secondaryButtonClassName} onClick={() => void handleSendLeadershipReminder(leadershipReminderRetry)}>
+                      나머지 다시 보내기
+                    </button>
+                  ) : null}
                 </>
               ) : null}
             </div>

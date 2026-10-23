@@ -307,7 +307,9 @@ async function main() {
 
     assert.equal(adminPanel.includes('/api/feedback/folders'), true)
     assert.equal(adminPanel.includes('/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/settings'), true)
-    assert.equal(adminPanel.includes('/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/notifications'), true)
+    // 알림 API 호출은 공용 모듈(round-notification-batches)을 거친다: 패널은 sendFeedback360Reminders 를 import · 호출하고, URL 은 공용 모듈에 있다.
+    assert.equal(/import \{[^}]*\bsendFeedback360Reminders\b[^}]*\} from '@\/lib\/round-notification-batches'/.test(adminPanel) && adminPanel.includes('await sendFeedback360Reminders({'), true)
+    assert.equal(read('src/lib/round-notification-batches.ts').includes('`/api/feedback/rounds/${encodeURIComponent(roundId)}/notifications`'), true)
     assert.equal(adminPanel.includes('function selectAllMatchingTargets()'), true)
     assert.equal(adminPanel.includes('setSelectedTargetIds(visibleReminderRecipientIds)'), true)
     assert.equal(adminPanel.includes('reminderStatusFilter'), true)

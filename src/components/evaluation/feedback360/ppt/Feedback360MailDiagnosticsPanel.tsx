@@ -15,6 +15,8 @@ type Feedback360MailDiagnosticsPanelProps = {
   busy: boolean
   onRetry: () => void
   onClose: () => void
+  // 묶음 발송이 중간에 멈췄을 때 '나머지 다시 보내기'처럼 바꿔 쓴다.
+  retryLabel?: string
 }
 
 export function Feedback360MailDiagnosticsPanel(props: Feedback360MailDiagnosticsPanelProps) {
@@ -39,7 +41,7 @@ export function Feedback360MailDiagnosticsPanel(props: Feedback360MailDiagnostic
             disabled={props.busy}
             className="inline-flex min-h-9 items-center justify-center rounded-lg border border-current/25 bg-white/70 px-3 text-xs font-semibold transition hover:bg-white disabled:opacity-60"
           >
-            다시 시도
+            {props.retryLabel ?? '다시 시도'}
           </button>
           <button
             type="button"
